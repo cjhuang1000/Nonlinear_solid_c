@@ -2,6 +2,7 @@
 #define FIELD_S_H 1
 
 #include <petsc.h>
+#include <petscsys.h>
 #include <petscvec.h>
 #include <petscmat.h>
 #include <petscis.h>
@@ -9,8 +10,8 @@
 typedef struct
 {
 
-	short int *G2g,			*g2G;
-	short int *G2g_before,	*g2G_before;
+	short int *G2g,			*l2G;
+	short int *G2g_before,	*l2g;
 	short int *C2c_fsi,		*c2C_fsi;
 	short int *C2c_neumann,	*c2C_neumann;
 	short int *C2c_dirichlet,*c2C_dirichlet;
@@ -34,13 +35,20 @@ typedef struct {
   /* Position of the involved variables in the list*/
   Index_xixy xiy;
 
-  /* Number of involved cells/variables*/
+  /* Number of involved cells/variables (local)*/
   int cell_N_interior,cell_N_FSI,cell_N_boundary,cell_N_Neumann,cell_N_Dirichlet;
   int xix_N         ,xiy_N;
   int xix_N_before  ,xiy_N_before;
   int xix_Ncell_FSI ,xiy_Ncell_FSI;
   int xix_Ncell_Neumann     ,xiy_Ncell_Neumann;
   int xix_Ncell_Dirichlet   ,xiy_Ncell_Dirichlet;
+
+  /* Number of involved cells/variables (global)*/
+  int xi_gloN, xi_gloN_before;
+  int xix_gloN, xix_gloN_before;
+  int xix_ghoN, xiy_ghoN;
+  int xi_gloNcell_Neumann     ,xi_gloNcell_Dirichlet;
+  int xix_gloNcell_Neumann    ,xix_gloNcell_Dirichlet;
 
 } Index_S;
 
@@ -49,7 +57,7 @@ typedef struct {
 typedef struct {
 
     /* displacement,velocity */
-    Vec xi;   //[xi.x; xi.y]
+    Vec xi;   //[xi.x1; xi.y1; xi_x2;xi_y2;...]
     Vec dxi;
     Vec ddxi;
     Vec inc_dxi;
@@ -152,5 +160,16 @@ typedef struct {
 	double	theta;
 
 }TimeMarching;
+
+typedef struct {
+
+	PetscInt    *v2p;  // processor number for a vertex
+	VecScatter  scatter;
+	AO			ao;
+	PetscMPIInt	rank,size;
+	int 		dmx_s, dmy_s, dmx_e, dmy_e;
+
+}AppCtx;
+
 
 #endif  /* FIELD_S_H */

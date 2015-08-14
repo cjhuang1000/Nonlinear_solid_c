@@ -95,7 +95,7 @@ int              type_determination     (double x[4]);
 boundfunc_cell   compute_matricesCell_bound(int cell_i, double sdf_value[4], char bd_type, int* ptr_bd);
 boundfunc_cell   compute_matricesSubcell(double bound_value[4], char bd_type, int* ptr_type);
 
-void reduce_vector(short int** a, int* v, int n_b, int n_a);
+void reduce_vector(short int** a, int n_b, int n_a);
 void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat* ptr_NS, Mat* ptr_DS);
 
 /// Setting up the
@@ -228,28 +228,28 @@ void compute_matricesNonlinearStructure(Matrices_S* ptr_ms, Index_S* ptr_i, Grid
 
     /*initialize the matrices MS, KLS, NS, DS */
 
-    k = ptr_i->xix_N + ptr_i->xiy_N;
+    k = ptr_i->xi_gloN;
 
-    MatCreate(PETSC_COMM_SELF,&(MS_full));
-    MatSetSizes(MS_full,k,k,k,k);
+    MatCreate(MPI_COMM_WORLD,&(MS_full));
+    MatSetSizes(MS_full,PETSC_DECIDE,PETSC_DECIDE,k,k);
     MatSetFromOptions(MS_full);
     MatSetUp(MS_full);
     MatZeroEntries(MS_full);
 
-    MatCreate(PETSC_COMM_SELF,&(KLS_full));
-    MatSetSizes(KLS_full,k,k,k,k);
+    MatCreate(MPI_COMM_WORLD,&(KLS_full));
+    MatSetSizes(KLS_full,PETSC_DECIDE,PETSC_DECIDE,k,k);
     MatSetFromOptions(KLS_full);
     MatSetUp(KLS_full);
     MatZeroEntries(KLS_full);
 
-    MatCreate(PETSC_COMM_SELF,&(NS_full));
-    MatSetSizes(NS_full,k,ptr_i->xix_Ncell_Neumann+ptr_i->xiy_Ncell_Neumann,k,ptr_i->xix_Ncell_Neumann+ptr_i->xiy_Ncell_Neumann);
+    MatCreate(MPI_COMM_WORLD,&(NS_full));
+    MatSetSizes(NS_full,PETSC_DECIDE,PETSC_DECIDE,k,ptr_i->xi_gloNcell_Neumann);
     MatSetFromOptions(NS_full);
     MatSetUp(NS_full);
     MatZeroEntries(NS_full);
 
-    MatCreate(PETSC_COMM_SELF,&(DS_full));
-    MatSetSizes(DS_full,k,ptr_i->xix_Ncell_Dirichlet+ptr_i->xiy_Ncell_Dirichlet,k,ptr_i->xix_Ncell_Dirichlet+ptr_i->xiy_Ncell_Dirichlet);
+    MatCreate(MPI_COMM_WORLD,&(DS_full));
+    MatSetSizes(DS_full,PETSC_DECIDE,PETSC_DECIDE,k,ptr_i->xi_gloNcell_Dirichlet);
     MatSetFromOptions(DS_full);
     MatSetUp(DS_full);
     MatZeroEntries(DS_full);
@@ -263,7 +263,7 @@ void compute_matricesNonlinearStructure(Matrices_S* ptr_ms, Index_S* ptr_i, Grid
        for(j=0;j<6;j++)
        {
             index_xix[j] = ptr_i->xix.G2g[index_cell.xix[j]];
-            index_xiy[j] = ptr_i->xiy.G2g[index_cell.xiy[j]]+ptr_i->xix_N;  // y component if after x component
+            index_xiy[j] = ptr_i->xiy.G2g[index_cell.xiy[j]];  // y component if after x component
        }
 
        for(j=0;j<6;j++)
@@ -310,6 +310,7 @@ void compute_matricesNonlinearStructure(Matrices_S* ptr_ms, Index_S* ptr_i, Grid
     }
 
     shapefunc.cutcell=(boundfunc_cutcell*) malloc(nsubcell*sizeof(boundfunc_cutcell));
+
     for(i=0;i<ptr_g->N;i++)
         for(j=0;j<4;j++)
             shapefunc.info[i][j]=-3; // initial value: -3
@@ -330,8 +331,8 @@ void compute_matricesNonlinearStructure(Matrices_S* ptr_ms, Index_S* ptr_i, Grid
        for(j=0;j<6;j++)
        {
             index_xix[j] = ptr_i->xix.G2g[index_cell.xix[j]];
-            index_xiy[j] = ptr_i->xiy.G2g[index_cell.xiy[j]]+ptr_i->xix_N; // y component if after x component
-        }
+            index_xiy[j] = ptr_i->xiy.G2g[index_cell.xiy[j]]; // y component if after x component
+       }
 
        sdf[0] = ptr_s->boundary_value[ii][jj];
        sdf[1] = ptr_s->boundary_value[ii+1][jj];
@@ -370,8 +371,7 @@ void compute_matricesNonlinearStructure(Matrices_S* ptr_ms, Index_S* ptr_i, Grid
            for(j=0;j<2;j++)
             {
                 index_stagx[j] = ptr_i->xix.C2c_dirichlet[index_cell.stagx_cell[j]];
-                index_stagy[j] = ptr_i->xiy.C2c_dirichlet[index_cell.stagy_cell[j]]
-                                + ptr_i->xix_Ncell_Dirichlet;
+                index_stagy[j] = ptr_i->xiy.C2c_dirichlet[index_cell.stagy_cell[j]];
             }
             for(j=0;j<6;j++)
                 for(k=0;k<2;k++)
@@ -389,7 +389,8 @@ void compute_matricesNonlinearStructure(Matrices_S* ptr_ms, Index_S* ptr_i, Grid
             for(j=0;j<2;j++)
             {
                 index_stagx[j] = ptr_i->xix.C2c_neumann[index_cell.stagx_cell[j]];
-                index_stagy[j] = ptr_i->xiy.C2c_neumann[index_cell.stagy_cell[j]]+ptr_i->xix_Ncell_Neumann;
+                index_stagy[j] = ptr_i->xiy.C2c_neumann[index_cell.stagy_cell[j]];
+
             }
             for(j=0;j<6;j++)
                 for(k=0;k<2;k++)
@@ -419,14 +420,14 @@ void compute_matricesNonlinearStructure(Matrices_S* ptr_ms, Index_S* ptr_i, Grid
     //Reduce system
 
     reduce_system(ptr_g,ptr_i,&MS_full,&KLS_full,&NS_full,&DS_full);
-
+    /*
     //Set the reduced governing matrices
     MatGetSubMatrix(MS_full,ptr_i->is_xi,ptr_i->is_xi,MAT_INITIAL_MATRIX,&ptr_ms->MS);
     MatGetSubMatrix(KLS_full,ptr_i->is_xi,ptr_i->is_xi,MAT_INITIAL_MATRIX,&ptr_ms->KLS);
     MatGetSubMatrix(KLS_full,ptr_i->is_xi,ptr_i->is_xi,MAT_INITIAL_MATRIX,&ptr_ms->KNS); // just for initialization
     MatGetSubMatrix(NS_full,ptr_i->is_xi,ptr_i->is_neu,MAT_INITIAL_MATRIX,&ptr_ms->NS);
     MatGetSubMatrix(DS_full,ptr_i->is_xi,ptr_i->is_dir,MAT_INITIAL_MATRIX,&ptr_ms->DS);
-
+     */
     // free the memory
     MatDestroy(&MS_full); MatDestroy(&KLS_full); MatDestroy(&NS_full); MatDestroy(&DS_full);
 }
@@ -474,7 +475,6 @@ boundfunc_cell compute_matricesCell_bound(int cell_i, double sdf_value[4], char 
     sdf[5] = (sdf[2]+sdf[8])/2;
     sdf[7] = (sdf[6]+sdf[8])/2;
     sdf[4] = (sdf[0]+sdf[2]+sdf[6]+sdf[8])/4;
-
 
     for(subcell_k=0;subcell_k<4; subcell_k++ )
     {
@@ -581,7 +581,7 @@ boundfunc_cell compute_matricesSubcell(double bound_value[4], char bd_type, int*
     % y-coordinates and signed-function value for each of the corners.
     % The coordinates are with respect to the left-lower corner origin, and
     %normalized by the cell size dim.h*/
-    int     i,j,k;
+    int     i,j;
     int     bound_sign[4],side,side_next,ncorner1 =4,ncorner2;
     int     ind1[4] = {0,1,2,3}, ind2[4]={0,1,3,4};
     double  corners[4][8] = {{0,0.5,0.5,0},{0,0,0.5,0.5},{bound_value[0],bound_value[1],bound_value[2],bound_value[3]},{0,1,2,3}};
@@ -1039,179 +1039,302 @@ void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat
     - irrelevant unknowns in u, v or p which have no-influence on the domain
     - by getting rid of the arbitrary solid-body-motion*/
 
-    int         n_xix =0,n_xiy =0, n_cellx_neu =0,n_celly_neu =0,n_cellx_dir =0,n_celly_dir=0;
-    int         i,j,n;
-    int         *index_keep_xix,*index_keep_xiy;
-    int         *index_keep_stagx_Neumann,   *index_keep_stagy_Neumann;
-    int         *index_keep_stagx_Dirichlet, *index_keep_stagy_Dirichlet;
-    Vec         MS_diag_vec, KLS_diag_vec;
+    int         glon_xi =0, glon_cell_neu =0,glon_cell_dir =0; // global number
+    int         n_xix =0, n_xix_gho =0, n_cellx_neu =0,n_cellx_dir =0;       // local number of cells
+    int         n_xiy =0, n_xiy_gho =0, n_celly_neu =0,n_celly_dir =0;
+    int         ns_xixy =0, ns_cellxy_neu =0, ns_cellxy_dir =0;
+    int         i,j,temp;
+    int         *index_keep_xi;            // g -> g'
+    int         *index_keep_stag_Neumann;  // c -> c'
+    int         *index_keep_stag_Dirichlet;// c -> c'
+    Vec          MS_diag_vec, KLS_diag_vec,MS_diag_locv, KLS_diag_locv;
     PetscScalar *MS_diag,*KLS_diag;
     PetscReal   *NS_norm, *DS_norm;
     PetscInt	*is_xi, *is_dir, *is_neu;
+    IS 			ixy;
+    VecScatter  scatter_MS,scatter_KS;
     
-    n = ptr_i->xix_N+ptr_i->xiy_N;
-    VecCreateSeq(PETSC_COMM_SELF,n,&MS_diag_vec);
-    VecCreateSeq(PETSC_COMM_SELF,n,&KLS_diag_vec);
-    
-    MatGetDiagonal(*ptr_MS,MS_diag_vec);
-    MatGetDiagonal(*ptr_KLS,KLS_diag_vec);
-    
-    VecGetArray(MS_diag_vec, &MS_diag);
-    VecGetArray(KLS_diag_vec,&KLS_diag);
-    
-    PetscMalloc1(ptr_i->xix_Ncell_Dirichlet+ ptr_i->xiy_Ncell_Dirichlet,&DS_norm);
-    PetscMalloc1(ptr_i->xix_Ncell_Neumann  + ptr_i->xiy_Ncell_Neumann  ,&NS_norm);
+    VecCreate(PETSC_COMM_WORLD,&MS_diag_vec);
+    VecSetSizes(MS_diag_vec,PETSC_DECIDE,ptr_i->xi_gloN);
+    VecSetFromOptions(MS_diag_vec);
+    VecDuplicate(MS_diag_vec,&KLS_diag_vec);
 
-    PetscMalloc1(ptr_i->xix_N+ ptr_i->xiy_N,&is_xi);
-    PetscMalloc1(ptr_i->xix_Ncell_Dirichlet+ ptr_i->xiy_Ncell_Dirichlet,&is_dir);
-    PetscMalloc1(ptr_i->xix_Ncell_Neumann  + ptr_i->xiy_Ncell_Neumann  ,&is_neu);
+    MatGetDiagonal(*ptr_MS,MS_diag_vec);  // can only be applied on the parallel mat and vec
+    MatGetDiagonal(*ptr_KLS,KLS_diag_vec);
+
+    VecCreateSeq(PETSC_COMM_SELF,ptr_i->xi_gloN,&MS_diag_locv); // create a sequential loc vec
+    VecDuplicate(MS_diag_locv,&KLS_diag_locv);
+
+    ISCreateStride(PETSC_COMM_SELF,ptr_i->xi_gloN,0,1,&ixy);
+    VecScatterCreate(MS_diag_vec,ixy,MS_diag_locv,ixy,&scatter_MS);
+    VecScatterBegin(scatter_MS,MS_diag_vec,MS_diag_locv,INSERT_VALUES,SCATTER_FORWARD);
+    VecScatterEnd(scatter_MS,MS_diag_vec,MS_diag_locv,INSERT_VALUES,SCATTER_FORWARD);
+    VecScatterCreate(KLS_diag_vec,ixy,KLS_diag_locv,ixy,&scatter_KS);
+    VecScatterBegin(scatter_KS,KLS_diag_vec,KLS_diag_locv,INSERT_VALUES,SCATTER_FORWARD);
+    VecScatterEnd(scatter_KS,KLS_diag_vec,KLS_diag_locv,INSERT_VALUES,SCATTER_FORWARD);
+
+    VecGetArray(MS_diag_locv, &MS_diag);
+    VecGetArray(KLS_diag_locv,&KLS_diag); // each processor will get all the info
+    
+    PetscMalloc1(ptr_i->xi_gloNcell_Dirichlet,&DS_norm);
+    PetscMalloc1(ptr_i->xi_gloNcell_Neumann  ,&NS_norm);
 
     MatGetColumnNorms(*ptr_DS ,NORM_INFINITY,DS_norm);
     MatGetColumnNorms(*ptr_NS ,NORM_INFINITY,NS_norm);
-    
-    index_keep_xix              = (int*) calloc(sizeof(int),ptr_i->xix_N);
-    index_keep_xiy              = (int*) calloc(sizeof(int),ptr_i->xiy_N);
-    index_keep_stagx_Neumann    = (int*) calloc(sizeof(int),ptr_i->xix_Ncell_Neumann);
-    index_keep_stagy_Neumann    = (int*) calloc(sizeof(int),ptr_i->xiy_Ncell_Neumann);
-    index_keep_stagx_Dirichlet  = (int*) calloc(sizeof(int),ptr_i->xix_Ncell_Dirichlet );
-    index_keep_stagy_Dirichlet  = (int*) calloc(sizeof(int),ptr_i->xiy_Ncell_Dirichlet );
+
+    index_keep_xi              = (int*) calloc(sizeof(int),ptr_i->xi_gloN);
+    index_keep_stag_Neumann    = (int*) calloc(sizeof(int),ptr_i->xi_gloNcell_Neumann);
+    index_keep_stag_Dirichlet  = (int*) calloc(sizeof(int),ptr_i->xi_gloNcell_Dirichlet );
 
     //VecView(MS_diag_vec,PETSC_VIEWER_STDOUT_SELF); //
     //VecView(KLS_diag_vec,PETSC_VIEWER_STDOUT_SELF); //
 
-    //List of the indices of variables which are not outside the domain
-    for(i=0; i<ptr_i->xix_N;i++)
+    // ok to here
+    // =================  xix, xiy ======================
+    //List of the indices of variables which are not outside of the domain
+    for(i=0; i<ptr_i->xi_gloN;i++)
     {
         if( ( MS_diag[i] != 0 ) || ( KLS_diag[i] != 0 ))
         {
-            index_keep_xix[n_xix] = i;
-            n_xix +=1;
+            index_keep_xi[i] = glon_xi;
+            glon_xi +=1;
         }
+        else
+        	index_keep_xi[i] = -1;
     }
 
-    for(i= 0 ; i< ptr_i->xiy_N;i++)
+    temp = ptr_i->xix_N + ptr_i->xiy_N;
+    MPI_Scan(&temp,&ns_xixy,1,MPIU_INT,MPI_SUM,PETSC_COMM_WORLD); // get the starting index of xi x,y on each processor
+    ns_xixy -= temp;
+
+    for(i= 0 ; i< ptr_i->xix_N ;i++)
     {
-        if( ( MS_diag[i+ptr_i->xix_N] != 0 ) || ( KLS_diag[i+ptr_i->xix_N] != 0 ))
+    	if(index_keep_xi[ptr_i->xix.l2g[i]] != -1)
+    	{
+    		ptr_i->xix.l2g[n_xix] = ptr_i->xix.l2g[i];
+    		ptr_i->xix.l2G[n_xix] = ptr_i->xix.l2G[i];
+    		n_xix ++;  // new xix_N
+    	}
+    }
+
+    for(i= ptr_i->xix_N ; i< ptr_i->xix_N + ptr_i->xix_ghoN ;i++)
+    {
+        if(index_keep_xi[ptr_i->xix.l2g[i]] != -1)
         {
-            index_keep_xiy[n_xiy] = i;
-            n_xiy +=1;
+        	ptr_i->xix.l2g[n_xix + n_xix_gho] = ptr_i->xix.l2g[i];
+        	ptr_i->xix.l2G[n_xix + n_xix_gho] = ptr_i->xix.l2G[i];
+        	n_xix_gho ++;  // new xix_N
         }
     }
 
-    for(i= 0 ; i< n_xix;i++)
-    	is_xi[i] = index_keep_xix[i];
+    for(i= 0 ; i< ptr_i->xiy_N ;i++)
+    {
+    	if(index_keep_xi[ptr_i->xiy.l2g[i]] != -1)
+    	{
+    		ptr_i->xiy.l2g[n_xiy] = ptr_i->xiy.l2g[i];
+    		ptr_i->xiy.l2G[n_xiy] = ptr_i->xiy.l2G[i];
+    		n_xiy ++;  // new xix_N
+    	}
+    }
 
-    for(i= 0 ; i< n_xiy;i++)
-    	is_xi[i+n_xix] = index_keep_xiy[i]+ptr_i->xix_N;
-
-    //List of the indices of cells acting on Dirichlet boundary
-
-    for(j=0;j< ptr_i->xix_Ncell_Dirichlet; j++)
-        if (DS_norm[j] != 0)
+    for(i= ptr_i->xiy_N ; i< ptr_i->xiy_N + ptr_i->xiy_ghoN ;i++)
+    {
+        if(index_keep_xi[ptr_i->xiy.l2g[i]] != -1)
         {
-             index_keep_stagx_Dirichlet[n_cellx_dir] = j;
-             n_cellx_dir +=1;
+        	ptr_i->xiy.l2g[n_xiy + n_xiy_gho] = ptr_i->xiy.l2g[i];
+        	ptr_i->xiy.l2G[n_xiy + n_xiy_gho] = ptr_i->xiy.l2G[i];
+        	n_xiy_gho ++;  // new xix_N
         }
+    }
+    /*
+    //temp = n_xix + n_xiy;
+    //MPI_Scan(&temp,&ns_xixy_new,1,MPIU_INT,MPI_SUM,PETSC_COMM_WORLD); // get the starting index of xi x,y on each processor
+    //ns_xixy_new -= temp;
 
-    n = ptr_i->xix_Ncell_Dirichlet;
-    for(j=0;j< ptr_i->xiy_Ncell_Dirichlet; j++)
-        if (DS_norm[j+n] != 0)
-        {
-             index_keep_stagy_Dirichlet[n_celly_dir] = j;
-             n_celly_dir +=1;
-        }
-
-    for(i= 0 ; i< n_cellx_dir;i++)
-    	is_dir[i] = index_keep_stagx_Dirichlet[i];
-
-    for(i= 0 ; i< n_celly_dir;i++)
-    	is_dir[i+n_cellx_dir] = index_keep_stagy_Dirichlet[i]+ptr_i->xix_Ncell_Dirichlet;
-
-    //List of the indices of cells acting on Neumann boundary
-
-     for(j=0;j< ptr_i->xix_Ncell_Neumann; j++)
-        if (NS_norm[j] != 0)
-        {
-            index_keep_stagx_Neumann[n_cellx_neu] = j;
-            n_cellx_neu +=1;
-        }
-
-     n = ptr_i->xix_Ncell_Neumann;
-    for(j=0;j< ptr_i->xiy_Ncell_Neumann; j++)
-        if (NS_norm[j+n] != 0)
-        {
-            index_keep_stagy_Neumann[n_celly_neu] = j;
-            n_celly_neu +=1;
-        }
-
-
-     for(i= 0 ; i< n_cellx_neu;i++)
-     	is_neu[i] = index_keep_stagx_Neumann[i];
-
-     for(i= 0 ; i< n_celly_neu;i++)
-     	is_neu[i+n_cellx_neu] = index_keep_stagy_Neumann[i]+ptr_i->xix_Ncell_Neumann;
-
-    /* --------Update the G2g and C2c arrays ------------*/
-    //---------------preallocate ind_new and copy value into it
-
-    /* add value to g2G,G2g_before and keep before freeing the memory in the original index */
-    ptr_i->xix.g2G_before = (short int *) malloc(sizeof(short int)*ptr_i->xix_N);
     ptr_i->xix.G2g_before = (short int *) malloc(sizeof(short int)*ptr_g->N);
-
-    ptr_i->xiy.g2G_before = (short int *) malloc(sizeof(short int)*ptr_i->xiy_N);
     ptr_i->xiy.G2g_before = (short int *) malloc(sizeof(short int)*ptr_g->N);
 
-    ptr_i->xix.keep       = (short int *) malloc(sizeof(short int)*n_xix);
-    ptr_i->xiy.keep       = (short int *) malloc(sizeof(short int)*n_xiy);
-
-
-    for(i=0;i<ptr_g->N;i++)
+    for(i= 0 ; i< ptr_g->N ;i++)
     {
         ptr_i->xix.G2g_before[i] = ptr_i->xix.G2g[i];
         ptr_i->xiy.G2g_before[i] = ptr_i->xiy.G2g[i];
+        ptr_i->xix.G2g[i] = index_keep_xi[ptr_i->xix.G2g[i]];
+        ptr_i->xiy.G2g[i] = index_keep_xi[ptr_i->xiy.G2g[i]];
     }
 
-	for(i=0;i<n_xix;i++)
+    PetscMalloc1(n_xix + n_xiy,&is_xi);   // local index
+    temp = 0;
+    for(i= ns_xixy ; i< ns_xixy + ptr_i->xix_N + ptr_i->xiy_N ;i++)
     {
-        ptr_i->xix.keep[i] = index_keep_xix[i];
+    	if(index_keep_xi[i] != -1)
+    	{
+    		is_xi[temp] = i;
+    		temp++;
+    	}
     }
 
-	for(i=0;i<n_xiy;i++)
+    //List of the indices of cells acting on Dirichlet boundary
+    //========================= dir ============================
+
+    for(j=0;j< ptr_i->xi_gloNcell_Dirichlet; j++)
     {
-        ptr_i->xiy.keep[i] = index_keep_xiy[i];
+        if (DS_norm[j] != 0)
+        {
+             index_keep_stag_Dirichlet[j] = glon_cell_dir;
+             glon_cell_dir +=1;
+        }
+        else
+        	index_keep_stag_Dirichlet[j] = -1;
     }
 
-    reduce_vector(&(ptr_i->xix.g2G),index_keep_xix,ptr_i->xix_N,n_xix);
-    reduce_vector(&(ptr_i->xiy.g2G),index_keep_xiy,ptr_i->xiy_N,n_xiy);
+    temp = ptr_i->xix_Ncell_Dirichlet + ptr_i->xiy_Ncell_Dirichlet;
+    MPI_Scan(&temp,&ns_cellxy_dir,1,MPIU_INT,MPI_SUM,PETSC_COMM_WORLD); // get the starting index of xi x,y on each processor
+    ns_cellxy_dir -= temp;
 
-    reduce_vector(&(ptr_i->xix.c2C_neumann),index_keep_stagx_Neumann,ptr_i->xix_Ncell_Neumann,n_cellx_neu);
-    reduce_vector(&(ptr_i->xiy.c2C_neumann),index_keep_stagy_Neumann,ptr_i->xiy_Ncell_Neumann,n_celly_neu);
 
-    reduce_vector(&(ptr_i->xix.c2C_dirichlet),index_keep_stagx_Dirichlet,ptr_i->xix_Ncell_Dirichlet,n_cellx_dir);
-    reduce_vector(&(ptr_i->xiy.c2C_dirichlet),index_keep_stagy_Dirichlet,ptr_i->xiy_Ncell_Dirichlet,n_celly_dir);
-
-    for(i=0;i<ptr_g->N;i++)
+    for(i= 0 ; i< ptr_i->xix_Ncell_Dirichlet ;i++)
     {
-        ptr_i->xix.G2g[i] = -1;
-        ptr_i->xiy.G2g[i] = -1;
-        ptr_i->xix.C2c_dirichlet[i] = -1;
-        ptr_i->xiy.C2c_dirichlet[i] = -1;
-        ptr_i->xix.C2c_neumann[i] = -1;
-        ptr_i->xiy.C2c_neumann[i] = -1;
+    	if(index_keep_stag_Dirichlet[ ptr_i->xix.C2c_dirichlet[ptr_i->xix.c2C_dirichlet[i]] ] != -1)
+    	{
+    		ptr_i->xix.c2C_dirichlet[n_cellx_dir] = ptr_i->xix.c2C_dirichlet[i];
+    		n_cellx_dir ++;  // new xix_N
+    	}
     }
 
-    for(i=0;i<n_xix;i++)
-        ptr_i->xix.G2g[ptr_i->xix.g2G[i]]=i;
-    for(i=0;i<n_xiy;i++)
-        ptr_i->xiy.G2g[ptr_i->xiy.g2G[i]]=i;
-    for(i=0;i<n_cellx_neu;i++)
-        ptr_i->xix.C2c_neumann[ptr_i->xix.c2C_neumann[i]]=i;
-    for(i=0;i<n_celly_neu;i++)
-        ptr_i->xiy.C2c_neumann[ptr_i->xiy.c2C_neumann[i]]=i;
-    for(i=0;i<n_cellx_dir;i++)
-        ptr_i->xix.C2c_dirichlet[ptr_i->xix.c2C_dirichlet[i]]=i;
-    for(i=0;i<n_celly_dir;i++)
-        ptr_i->xiy.C2c_dirichlet[ptr_i->xiy.c2C_dirichlet[i]]=i;
+    for(i= 0 ; i< ptr_i->xiy_Ncell_Dirichlet ;i++)
+    {
+    	if(index_keep_stag_Dirichlet[ ptr_i->xiy.C2c_dirichlet[ptr_i->xiy.c2C_dirichlet[i]] ] != -1)
+    	{
+    		ptr_i->xiy.c2C_dirichlet[n_celly_dir] = ptr_i->xiy.c2C_dirichlet[i];
+    		n_celly_dir ++;  // new xix_N
+    	}
+    }
+
+    for(i= 0 ; i< ptr_g->N ;i++)
+    {
+    	ptr_i->xix.C2c_dirichlet[i] = index_keep_stag_Dirichlet[ptr_i->xix.C2c_dirichlet[i]];
+        ptr_i->xiy.C2c_dirichlet[i] = index_keep_stag_Dirichlet[ptr_i->xiy.C2c_dirichlet[i]];
+    }
+
+    PetscMalloc1(n_cellx_dir + n_celly_dir,&is_dir);
+
+    temp = 0;
+    for(i= ns_cellxy_dir ; i< ns_cellxy_dir + ptr_i->xix_Ncell_Dirichlet + ptr_i->xiy_Ncell_Dirichlet ;i++)
+    {
+    	if(index_keep_stag_Dirichlet[i] != -1)
+    	{
+    		is_dir[temp] = i;
+    		temp++;
+    	}
+    }
+
+    //List of the indices of cells acting on Neumann boundary
+    // ========================= neu ===========================
+
+    for(j=0;j< ptr_i->xix_gloNcell_Neumann; j++)
+     {
+         if (NS_norm[j] != 0)
+         {
+        	 index_keep_stag_Neumann[j] = glon_cell_neu;
+             glon_cell_neu +=1;
+         }
+         else
+        	 index_keep_stag_Neumann[j] = -1;
+     }
+
+     temp = ptr_i->xix_Ncell_Neumann + ptr_i->xiy_Ncell_Neumann;
+     MPI_Scan(&temp,&ns_cellxy_dir,1,MPIU_INT,MPI_SUM,PETSC_COMM_WORLD); // get the starting index of xi x,y on each processor
+     ns_cellxy_neu -= temp;
+
+
+     for(i= 0 ; i< ptr_i->xix_Ncell_Neumann ;i++)
+     {
+     	if(index_keep_stag_Neumann[ ptr_i->xix.C2c_neumann[ptr_i->xix.c2C_neumann[i]] ] != -1)
+     	{
+     		ptr_i->xix.c2C_neumann[n_cellx_neu] = ptr_i->xix.c2C_neumann[i];
+     		n_cellx_neu ++;  // new xix_N
+     	}
+     }
+
+     for(i= 0 ; i< ptr_i->xiy_Ncell_Neumann ;i++)
+     {
+     	if(index_keep_stag_Neumann[ ptr_i->xiy.C2c_neumann[ptr_i->xiy.c2C_neumann[i]] ] != -1)
+     	{
+     		ptr_i->xiy.c2C_neumann[n_celly_neu] = ptr_i->xiy.c2C_neumann[i];
+     		n_celly_neu ++;  // new xix_N
+     	}
+     }
+
+     for(i= 0 ; i< ptr_g->N ;i++)
+     {
+     	ptr_i->xix.C2c_neumann[i] = index_keep_stag_Neumann[ptr_i->xix.C2c_neumann[i]];
+        ptr_i->xiy.C2c_neumann[i] = index_keep_stag_Neumann[ptr_i->xiy.C2c_neumann[i]];
+     }
+
+     PetscMalloc1(n_cellx_neu + n_celly_neu,&is_neu);
+
+     temp = 0;
+     for(i= ns_cellxy_neu ; i< ns_cellxy_neu + ptr_i->xix_Ncell_Neumann + ptr_i->xiy_Ncell_Neumann ;i++)
+     {
+     	if(index_keep_stag_Neumann[i] != -1)
+     	{
+     		is_neu[temp] = i;
+     		temp++;
+     	}
+     }
+
+    // --------Update the l2g, l2G and c2C arrays ------------
+
+    //ptr_i->xix.keep       = (short int *) malloc(sizeof(short int)*n_xix);
+    //ptr_i->xiy.keep       = (short int *) malloc(sizeof(short int)*n_xiy);
+
+
+	//for(i=0;i<n_xix;i++)
+    //{
+    //    ptr_i->xix.keep[i] = index_keep_xix[i];
+    //}
+
+	//for(i=0;i<n_xiy;i++)
+    //{
+    //    ptr_i->xiy.keep[i] = index_keep_xiy[i];
+    //}
+
+    reduce_vector(&(ptr_i->xix.l2G),ptr_i->xix_N + ptr_i->xix_ghoN,n_xix + n_xix_gho);
+    reduce_vector(&(ptr_i->xix.l2g),ptr_i->xix_N + ptr_i->xix_ghoN,n_xix + n_xix_gho);
+
+    reduce_vector(&(ptr_i->xiy.l2G),ptr_i->xiy_N + ptr_i->xiy_ghoN,n_xiy + n_xiy_gho);
+    reduce_vector(&(ptr_i->xiy.l2g),ptr_i->xiy_N + ptr_i->xiy_ghoN,n_xiy + n_xiy_gho);
+
+    reduce_vector(&(ptr_i->xix.c2C_neumann),ptr_i->xix_Ncell_Neumann,n_cellx_neu);
+    reduce_vector(&(ptr_i->xiy.c2C_neumann),ptr_i->xiy_Ncell_Neumann,n_celly_neu);
+
+    reduce_vector(&(ptr_i->xix.c2C_dirichlet),ptr_i->xix_Ncell_Dirichlet,n_cellx_dir);
+    reduce_vector(&(ptr_i->xiy.c2C_dirichlet),ptr_i->xiy_Ncell_Dirichlet,n_celly_dir);
+
+
+	MPI_Reduce(&n_xix, &ptr_i->xix_gloN, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&ptr_i->xix_gloN, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+	MPI_Reduce(&n_xiy, &ptr_i->xi_gloN, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&ptr_i->xi_gloN, 1, MPI_INT, 0, MPI_COMM_WORLD);
+	ptr_i->xi_gloN += ptr_i->xix_gloN;
+
+	MPI_Reduce(&n_cellx_neu, &ptr_i->xix_gloNcell_Neumann, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&ptr_i->xix_gloNcell_Neumann, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+	MPI_Reduce(&n_celly_neu, &ptr_i->xi_gloNcell_Neumann, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&ptr_i->xi_gloNcell_Neumann, 1, MPI_INT, 0, MPI_COMM_WORLD);
+	ptr_i->xi_gloNcell_Neumann += ptr_i->xix_gloNcell_Neumann;
+
+	MPI_Reduce(&n_cellx_dir, &ptr_i->xix_gloNcell_Dirichlet, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&ptr_i->xix_gloNcell_Dirichlet, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+	MPI_Reduce(&n_celly_dir, &ptr_i->xi_gloNcell_Dirichlet, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&ptr_i->xi_gloNcell_Dirichlet, 1, MPI_INT, 0, MPI_COMM_WORLD);
+	ptr_i->xi_gloNcell_Dirichlet += ptr_i->xix_gloNcell_Dirichlet;
+
+	ptr_i->xi_gloN_before = ptr_i->xi_gloN;
+	ptr_i->xix_gloN_before = ptr_i->xix_gloN;
 
     ptr_i->xix_N_before = ptr_i->xix_N;
     ptr_i->xiy_N_before = ptr_i->xiy_N;
@@ -1222,16 +1345,14 @@ void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat
     ptr_i->xix_Ncell_Dirichlet = n_cellx_dir;
     ptr_i->xiy_Ncell_Dirichlet = n_celly_dir;
 
-    ISCreateGeneral(PETSC_COMM_SELF,n_xix+n_xiy,is_xi,PETSC_COPY_VALUES,&ptr_i->is_xi);
-    ISCreateGeneral(PETSC_COMM_SELF,n_cellx_neu + n_celly_neu,is_neu,PETSC_COPY_VALUES,&ptr_i->is_neu);
-    ISCreateGeneral(PETSC_COMM_SELF,n_cellx_dir + n_celly_dir,is_dir,PETSC_COPY_VALUES,&ptr_i->is_dir);
+    // to here
+    ISCreateGeneral(MPI_COMM_WORLD,n_xix+n_xiy,is_xi,PETSC_COPY_VALUES,&ptr_i->is_xi);
+    ISCreateGeneral(MPI_COMM_WORLD,n_cellx_neu + n_celly_neu,is_neu,PETSC_COPY_VALUES,&ptr_i->is_neu);
+    ISCreateGeneral(MPI_COMM_WORLD,n_cellx_dir + n_celly_dir,is_dir,PETSC_COPY_VALUES,&ptr_i->is_dir);
 
-    free(index_keep_xix );
-    free(index_keep_xiy );
-    free(index_keep_stagx_Neumann );
-    free(index_keep_stagy_Neumann );
-    free(index_keep_stagx_Dirichlet );
-    free(index_keep_stagy_Dirichlet );
+    free(index_keep_xi );
+    free(index_keep_stag_Neumann );
+    free(index_keep_stag_Dirichlet );
 
     VecRestoreArray(MS_diag_vec, &MS_diag);
     VecRestoreArray(KLS_diag_vec,&KLS_diag);
@@ -1244,22 +1365,24 @@ void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat
     PetscFree(is_neu);
     VecDestroy(&MS_diag_vec);
     VecDestroy(&KLS_diag_vec);
+    */
+    VecScatterDestroy(&scatter_MS);
+    VecScatterDestroy(&scatter_KS);
 }
 
-void reduce_vector(short int** a, int* v, int n_b, int n_a)
+// shrink the vector size from length n_b to n_a
+void reduce_vector(short int** a, int n_b, int n_a)
 {
     int i;
-    short int* temp;
+    short int* temp1, temp2;
 
-    temp = (short int *) malloc(sizeof(short int)*n_b);
-    for(i=0;i<n_b;i++)
-        temp[i] = (*a)[i];
-
-    free(*a);
-    *a = (short int *) malloc(sizeof(short int)*n_a);
+    temp1 = (short int *) malloc(sizeof(short int)*n_a);
     for(i=0;i<n_a;i++)
-        (*a)[i] = temp[v[i]];
+        temp1[i] = (*a)[i];
 
-    free(temp);
+    temp2 = *a;
+    *a = temp1;
+
+    free(temp2);
 
 }

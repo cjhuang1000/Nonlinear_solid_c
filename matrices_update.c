@@ -344,10 +344,10 @@ void compute_grad_update(struct Grad_Dist *ptr_dx, Field_S* ptr_f_old, Index_S* 
     }
 
     for(i=0;i<ptr_i->xix_N;i++)
-        xigrid_x[ptr_i->xix.g2G[i]]= xi[i];
+        xigrid_x[ptr_i->xix.l2G[i]]= xi[i];
 
     for(i=0;i<ptr_i->xiy_N;i++)
-        xigrid_y[ptr_i->xiy.g2G[i]]= xi[i+ptr_i->xix_N];
+        xigrid_y[ptr_i->xiy.l2G[i]]= xi[i+ptr_i->xix_N];
 
     for(i=0;i<nx-1;i++)
         for(j=0;j<ny-1;j++)

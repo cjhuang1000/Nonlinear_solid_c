@@ -2,9 +2,9 @@
 #include <math.h>
 #include "stdlib.h"
 
-int sumarray (int array[], int n);
+int sumarray (int array[], int target, int n);
 
-void set_index(Index_S* ind, Grid_S* g, int **bs, char *fsineumanndirichlet){
+void set_index(Index_S* ind, Grid_S* g, AppCtx* ptr_u, int **bs, char *fsineumanndirichlet){
 
 	int N = g->N,	m = g->Nx,	n = g->Ny;
 	int nint	=0,	nbnd	=0,		nfsi	=0, nneu	=0, ndir	=0;
@@ -12,6 +12,10 @@ void set_index(Index_S* ind, Grid_S* g, int **bs, char *fsineumanndirichlet){
 	int n_xfsi	=0,	n_yfsi	=0;
 	int n_xneu	=0,	n_yneu	=0;
 	int n_xdir	=0,	n_ydir	=0;
+	int ns_xixy	,	temp; // starting index of each processors
+	int ns_xyfsi;
+	int ns_xyneu;
+	int ns_xydir;
 	int i,j,k,kk;
 
 	unsigned int *cell_int,		*cell_bnd, *cell_fsi, *cell_neu, *cell_dir;
@@ -21,6 +25,11 @@ void set_index(Index_S* ind, Grid_S* g, int **bs, char *fsineumanndirichlet){
 	int *cell_involved_dir_x,	*cell_involved_dir_y;
 
 	struct invol involved;
+
+	int *ghostx, *ghosty;
+	PetscInt temp2;
+	PetscInt *pordering_x, *aordering_x, *pordering_y, *aordering_y;
+	AO		 ao_x, ao_y;
 
 	cell_int = (unsigned int *) calloc(sizeof(unsigned int),N);
 	cell_bnd = (unsigned int *) calloc(sizeof(unsigned int),N);
@@ -41,10 +50,16 @@ void set_index(Index_S* ind, Grid_S* g, int **bs, char *fsineumanndirichlet){
 	cell_involved_dir_y = (int *) calloc(sizeof(int),N);
 
 	// part I:  Determine whether a cell is in, out or on the boundary
-	for(j=1; j<n-1; j++)
-		for(i=1; i<m-1;i++ )
-		{
 
+	ptr_u->dmx_s = 1e9;
+	ptr_u->dmx_e = 0;
+	ptr_u->dmy_s = 1e9;
+	ptr_u->dmy_e = 0;
+
+
+	for(j=1; j<n-1; j++)
+		for(i=1; i<m-1;i++)
+		{
 			// Not-external cells (at least 1 corner in)
 			if ((bs[i][j] == -1) || (bs[i+1][j] == -1) ||
 				(bs[i][j+1] == -1) || (bs[i+1][j+1] == -1))
@@ -53,48 +68,91 @@ void set_index(Index_S* ind, Grid_S* g, int **bs, char *fsineumanndirichlet){
 				involved    = involvedIndices_grid( kk , m);
 				for(k=0; k<6; k++)
 				{
-					xix_involved[involved.xix[k]] =1;
-					xiy_involved[involved.xiy[k]] =1;
+					if (ptr_u->v2p[involved.xix[k]] == ptr_u->rank) // if the cell belongs to this processor
+						xix_involved[involved.xix[k]] =1;
+					else if (ptr_u->v2p[kk] == ptr_u->rank) // if the cell belongs to the next processor
+						xix_involved[involved.xix[k]] =2;
+
+					if (ptr_u->v2p[involved.xiy[k]] == ptr_u->rank)
+						xiy_involved[involved.xiy[k]] =1;
+					else if (ptr_u->v2p[kk] == ptr_u->rank)
+						xiy_involved[involved.xiy[k]] =2;
 				}
 
 				// interior
 				if ((bs[i][j]+bs[i+1][j]+bs[i][j+1]+bs[i+1][j+1]) <= -3)
 				{
-					cell_int[nint] = kk;
-					nint +=1;
+					if (ptr_u->v2p[kk] == ptr_u->rank)
+					{
+						cell_int[nint] = kk;
+						nint +=1;
+						if (i < ptr_u->dmx_s) ptr_u->dmx_s = i;
+						if (i > ptr_u->dmx_e) ptr_u->dmx_e = i;
+						if (j < ptr_u->dmy_s) ptr_u->dmy_s = j;
+						if (j > ptr_u->dmy_e) ptr_u->dmy_e = j;
+					}
 				}
 				// boundary cells
 				else{
-					cell_bnd[nbnd] = kk;
-					nbnd +=1;
+
+					if (ptr_u->v2p[kk] == ptr_u->rank)
+					{
+						cell_bnd[nbnd] = kk;
+						nbnd +=1;
+						if (i < ptr_u->dmx_s) ptr_u->dmx_s = i;
+						if (i > ptr_u->dmx_e) ptr_u->dmx_e = i;
+						if (j < ptr_u->dmy_s) ptr_u->dmy_s = j;
+						if (j > ptr_u->dmy_e) ptr_u->dmy_e = j;
+					}
 
 					switch (fsineumanndirichlet[kk])
 					{
 					case 'F':
-						cell_fsi[nfsi] = kk;
-						nfsi +=1;
+
+						if (ptr_u->v2p[kk] == ptr_u->rank)
+						{
+							cell_fsi[nfsi] = kk;
+							nfsi +=1;
+						}
+
 						for(k=0; k<2; k++)
 						{
-							cell_involved_fsi_x[involved.stagx_cell[k]] =1;
-							cell_involved_fsi_y[involved.stagy_cell[k]] =1;
+							if (ptr_u->v2p[involved.stagx_cell[k]] == ptr_u->rank)
+								cell_involved_fsi_x[involved.stagx_cell[k]] =1;
+							if (ptr_u->v2p[involved.stagy_cell[k]] == ptr_u->rank)
+								cell_involved_fsi_y[involved.stagy_cell[k]] =1;
 						}
 						break;
 					case 'N':
-						cell_neu[nneu] = kk;
-						nneu +=1;
+
+						if (ptr_u->v2p[kk] == ptr_u->rank)
+						{
+							cell_neu[nneu] = kk;
+							nneu +=1;
+						}
+
 						for(k=0; k<2; k++)
 						{
-							cell_involved_neu_x[involved.stagx_cell[k]] =1;
-							cell_involved_neu_y[involved.stagy_cell[k]] =1;
+							if (ptr_u->v2p[involved.stagx_cell[k]] == ptr_u->rank)
+								cell_involved_neu_x[involved.stagx_cell[k]] =1;
+							if (ptr_u->v2p[involved.stagy_cell[k]] == ptr_u->rank)
+								cell_involved_neu_y[involved.stagy_cell[k]] =1;
 						}
 						break;
 					case 'D':
-						cell_dir[ndir] = kk;
-						ndir +=1;
+
+						if (ptr_u->v2p[kk] == ptr_u->rank)
+						{
+							cell_dir[ndir] = kk;
+							ndir +=1;
+						}
+
 						for(k=0; k<2; k++)
 						{
-							cell_involved_dir_x[involved.stagx_cell[k]] =1;
-							cell_involved_dir_y[involved.stagy_cell[k]] =1;
+							if (ptr_u->v2p[involved.stagx_cell[k]] == ptr_u->rank)
+								cell_involved_dir_x[involved.stagx_cell[k]] =1;
+							if (ptr_u->v2p[involved.stagy_cell[k]] == ptr_u->rank)
+								cell_involved_dir_y[involved.stagy_cell[k]] =1;
 						}
 						break;
 
@@ -108,9 +166,9 @@ void set_index(Index_S* ind, Grid_S* g, int **bs, char *fsineumanndirichlet){
 
 	ind->cell_N_interior	= nint;
 	ind->cell_N_boundary	= nbnd;
-	ind->cell_N_Neumann	= nneu;
+	ind->cell_N_Neumann		= nneu;
 	ind->cell_N_Dirichlet	= ndir;
-	ind->cell_N_FSI		= nfsi;
+	ind->cell_N_FSI			= nfsi;
 
     ind->cell_interior = (unsigned int *) malloc(sizeof(unsigned int)*nint);
     for(i=0; i<nint; i++)
@@ -132,46 +190,73 @@ void set_index(Index_S* ind, Grid_S* g, int **bs, char *fsineumanndirichlet){
     for(i=0; i<ndir; i++)
         ind->cell_dirichlet[i]=cell_dir[i];
 
-	// part III: List the indices of the involved variables
+    // to here
+	// part II-I: reordering
+    ind->xix_N = sumarray(xix_involved,1,N);
+    ind->xiy_N = sumarray(xiy_involved,1,N);
+    ind->xix_Ncell_FSI  = sumarray(cell_involved_fsi_x,1,N);
+    ind->xiy_Ncell_FSI  = sumarray(cell_involved_fsi_y,1,N);
+    ind->xix_Ncell_Neumann  = sumarray(cell_involved_neu_x,1,N);
+    ind->xiy_Ncell_Neumann  = sumarray(cell_involved_neu_y,1,N);
+    ind->xix_Ncell_Dirichlet  = sumarray(cell_involved_dir_x,1,N);
+    ind->xiy_Ncell_Dirichlet  = sumarray(cell_involved_dir_y,1,N);
 
-	ind->xix_N = sumarray(xix_involved,N);
-	ind->xix.g2G = (short int *) malloc(sizeof(short int)*ind->xix_N);
+    ind->xix_ghoN = sumarray(xix_involved,2,N);
+    ind->xiy_ghoN = sumarray(xiy_involved,2,N);
+
+    temp = ind->xix_N + ind->xiy_N;
+    MPI_Scan(&temp,&ns_xixy,1,MPIU_INT,MPI_SUM,PETSC_COMM_WORLD); // get the starting index of xi x,y on each processor
+    ns_xixy -= temp;
+
+    temp = ind->xix_Ncell_FSI + ind->xiy_Ncell_FSI;
+    MPI_Scan(&temp,&ns_xyfsi,1,MPIU_INT,MPI_SUM,PETSC_COMM_WORLD);
+    ns_xyfsi -= temp;
+
+    temp = ind->xix_Ncell_Neumann + ind->xiy_Ncell_Neumann;
+    MPI_Scan(&temp,&ns_xyneu,1,MPIU_INT,MPI_SUM,PETSC_COMM_WORLD);
+    ns_xyneu -= temp;
+
+    temp = ind->xix_Ncell_Dirichlet + ind->xiy_Ncell_Dirichlet;
+    MPI_Scan(&temp,&ns_xydir,1,MPIU_INT,MPI_SUM,PETSC_COMM_WORLD);
+    ns_xydir -= temp;
+
+    // part III: List the indices of the involved variables
+
+	ind->xix.l2g = (short int *) malloc(sizeof(short int)*(ind->xix_N + ind->xix_ghoN));
+	ind->xix.l2G = (short int *) malloc(sizeof(short int)*(ind->xix_N + ind->xix_ghoN));
 	ind->xix.G2g = (short int *) malloc(sizeof(short int)*N);
 
-	ind->xiy_N = sumarray(xiy_involved,N);
-	ind->xiy.g2G = (short int *) malloc(sizeof(short int)*ind->xiy_N);
+	ind->xiy.l2g= (short int *) malloc(sizeof(short int)*(ind->xiy_N + ind->xiy_ghoN));
+	ind->xiy.l2G= (short int *) malloc(sizeof(short int)*(ind->xiy_N + ind->xiy_ghoN));
 	ind->xiy.G2g = (short int *) malloc(sizeof(short int)*N);
 
-	ind->xix_Ncell_FSI  = sumarray(cell_involved_fsi_x,N);
 	ind->xix.c2C_fsi = (short int *) malloc(sizeof(short int)*ind->xix_Ncell_FSI);
 	ind->xix.C2c_fsi = (short int *) malloc(sizeof(short int)*N);
 
-	ind->xiy_Ncell_FSI  = sumarray(cell_involved_fsi_y,N);
 	ind->xiy.c2C_fsi = (short int *) malloc(sizeof(short int)*ind->xiy_Ncell_FSI);
 	ind->xiy.C2c_fsi = (short int *) malloc(sizeof(short int)*N);
 
-	ind->xix_Ncell_Neumann  = sumarray(cell_involved_neu_x,N);
 	ind->xix.c2C_neumann = (short int *) malloc(sizeof(short int)*ind->xix_Ncell_Neumann);
 	ind->xix.C2c_neumann = (short int *) malloc(sizeof(short int)*N);
 
-	ind->xiy_Ncell_Neumann  = sumarray(cell_involved_neu_y,N);
 	ind->xiy.c2C_neumann = (short int *) malloc(sizeof(short int)*ind->xiy_Ncell_Neumann);
 	ind->xiy.C2c_neumann = (short int *) malloc(sizeof(short int)*N);
 
-	ind->xix_Ncell_Dirichlet  = sumarray(cell_involved_dir_x,N);
 	ind->xix.c2C_dirichlet = (short int *) malloc(sizeof(short int)*ind->xix_Ncell_Dirichlet);
 	ind->xix.C2c_dirichlet = (short int *) malloc(sizeof(short int)*N);
 
-	ind->xiy_Ncell_Dirichlet  = sumarray(cell_involved_dir_y,N);
 	ind->xiy.c2C_dirichlet = (short int *) malloc(sizeof(short int)*ind->xiy_Ncell_Dirichlet);
 	ind->xiy.C2c_dirichlet = (short int *) malloc(sizeof(short int)*N);
+
 
 	for(i=0; i<N; i++)
 	{
 		if (xix_involved[i]==1)
 		{
-			ind->xix.g2G[n_xix] =(short int) i;
-			ind->xix.G2g[i] =(short int) n_xix;
+			ind->xix.l2G[n_xix] =(short int) i;
+			ind->xix.l2g[n_xix] =(short int) n_xix + ns_xixy;
+			ind->xix.G2g[i] =(short int) n_xix + ns_xixy;
+
 			n_xix +=1;
 		}
 		else
@@ -179,8 +264,9 @@ void set_index(Index_S* ind, Grid_S* g, int **bs, char *fsineumanndirichlet){
 
 		if (xiy_involved[i]==1)
 		{
-			ind->xiy.g2G[n_xiy] =(short int) i;
-			ind->xiy.G2g[i] =(short int) n_xiy;
+			ind->xiy.l2G[n_xiy] =(short int) i;
+			ind->xiy.l2g[n_xiy] =(short int) n_xiy + ns_xixy + ind->xix_N;
+			ind->xiy.G2g[i] =(short int) n_xiy + ns_xixy + ind->xix_N;
 			n_xiy +=1;
 		}
 		else
@@ -189,7 +275,7 @@ void set_index(Index_S* ind, Grid_S* g, int **bs, char *fsineumanndirichlet){
 		if (cell_involved_fsi_x[i]==1)
 		{
 			ind->xix.c2C_fsi[n_xfsi] = (short int)i;
-			ind->xix.C2c_fsi[i] =(short int) n_xfsi;
+			ind->xix.C2c_fsi[i] =(short int) n_xfsi + ns_xyfsi;
 			n_xfsi +=1;
 		}
 		else
@@ -198,7 +284,7 @@ void set_index(Index_S* ind, Grid_S* g, int **bs, char *fsineumanndirichlet){
 		if (cell_involved_fsi_y[i]==1)
 		{
 			ind->xiy.c2C_fsi[n_yfsi] = (short int)i;
-			ind->xiy.C2c_fsi[i] = (short int)n_yfsi;
+			ind->xiy.C2c_fsi[i] = (short int)n_yfsi + ns_xyfsi + ind->xix_Ncell_FSI;
 			n_yfsi +=1;
 		}
 		else
@@ -207,7 +293,7 @@ void set_index(Index_S* ind, Grid_S* g, int **bs, char *fsineumanndirichlet){
 		if (cell_involved_neu_x[i]==1)
 		{
 			ind->xix.c2C_neumann[n_xneu] =(short int) i;
-			ind->xix.C2c_neumann[i] = (short int)n_xneu;
+			ind->xix.C2c_neumann[i] = (short int)n_xneu + ns_xyneu;
 			n_xneu +=1;
 		}
 		else
@@ -216,7 +302,7 @@ void set_index(Index_S* ind, Grid_S* g, int **bs, char *fsineumanndirichlet){
 		if (cell_involved_neu_y[i]==1)
 		{
 			ind->xiy.c2C_neumann[n_yneu] =(short int) i;
-			ind->xiy.C2c_neumann[i] = (short int)n_yneu;
+			ind->xiy.C2c_neumann[i] = (short int)n_yneu + ns_xyneu + ind->xix_Ncell_Neumann;
 			n_yneu +=1;
 		}
 		else
@@ -225,7 +311,7 @@ void set_index(Index_S* ind, Grid_S* g, int **bs, char *fsineumanndirichlet){
 		if (cell_involved_dir_x[i]==1)
 		{
 			ind->xix.c2C_dirichlet[n_xdir] =(short int) i;
-			ind->xix.C2c_dirichlet[i] =(short int) n_xdir;
+			ind->xix.C2c_dirichlet[i] =(short int) n_xdir + ns_xydir;
 			n_xdir +=1;
 		}
 		else
@@ -234,13 +320,125 @@ void set_index(Index_S* ind, Grid_S* g, int **bs, char *fsineumanndirichlet){
 		if (cell_involved_dir_y[i]==1)
 		{
 			ind->xiy.c2C_dirichlet[n_ydir] =(short int) i;
-			ind->xiy.C2c_dirichlet[i] = (short int)n_ydir;
+			ind->xiy.C2c_dirichlet[i] = (short int)n_ydir + ns_xydir + ind->xix_Ncell_Dirichlet;
 			n_ydir +=1;
 		}
 		else
 			ind->xiy.C2c_dirichlet[i] = (short int)-1;
 
 	}
+
+	// part III-II: calculate global numbers
+
+	MPI_Reduce(&ind->xix_N, &ind->xix_gloN, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&ind->xix_gloN, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+	MPI_Reduce(&ind->xiy_N, &ind->xi_gloN, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&ind->xi_gloN, 1, MPI_INT, 0, MPI_COMM_WORLD);
+	ind->xi_gloN += ind->xix_gloN;
+
+	MPI_Reduce(&ind->xix_Ncell_Neumann, &ind->xix_gloNcell_Neumann, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&ind->xix_gloNcell_Neumann, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+	MPI_Reduce(&ind->xiy_Ncell_Neumann, &ind->xi_gloNcell_Neumann, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&ind->xi_gloNcell_Neumann, 1, MPI_INT, 0, MPI_COMM_WORLD);
+	ind->xi_gloNcell_Neumann += ind->xix_gloNcell_Neumann;
+
+	MPI_Reduce(&ind->xix_Ncell_Dirichlet, &ind->xix_gloNcell_Dirichlet, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&ind->xix_gloNcell_Dirichlet, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+	MPI_Reduce(&ind->xiy_Ncell_Dirichlet, &ind->xi_gloNcell_Dirichlet, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&ind->xi_gloNcell_Dirichlet, 1, MPI_INT, 0, MPI_COMM_WORLD);
+	ind->xi_gloNcell_Dirichlet += ind->xix_gloNcell_Dirichlet;
+
+	//printf("processor %d shows %d\n", ptr_u->rank, ind->xix_gloN);
+	// for fsi (to be done)
+
+	// part IV: Ghost cells of xix and xiy
+	n_xix = 0; n_xiy = 0;
+
+	PetscMalloc1(ind->xix_N, &pordering_x);
+	PetscMalloc1(ind->xix_N, &aordering_x);
+	PetscMalloc1(ind->xiy_N, &pordering_y);
+	PetscMalloc1(ind->xiy_N, &aordering_y);
+
+	for(i=0; i<ind->xix_N; i++)
+	{
+		pordering_x[i] = ind->xix.l2g[i];
+		aordering_x[i] = ind->xix.l2G[i];
+	}
+
+	for(i=0; i<ind->xiy_N; i++)
+	{
+		pordering_y[i] = ind->xiy.l2g[i];
+		aordering_y[i] = ind->xiy.l2G[i];
+	}
+
+
+	AOCreateMapping(MPI_COMM_WORLD,ind->xix_N,aordering_x,pordering_x,&ao_x);
+	AOCreateMapping(MPI_COMM_WORLD,ind->xiy_N,aordering_y,pordering_y,&ao_y);
+
+	//AOView(ao_x,PETSC_VIEWER_STDOUT_WORLD);
+	//AOView(ao_y,PETSC_VIEWER_STDOUT_WORLD);
+
+	// append ghost cell at the end of g2G and
+	for(i=0; i<N; i++)
+	{
+		if (xix_involved[i]==2)
+		{
+			ind->xix.l2G[n_xix + ind->xix_N] =(short int) i;
+			temp2 = i;
+			AOApplicationToPetsc(ao_x,1,&temp2);
+			ind->xix.G2g[i] =(short int) temp2;
+			ind->xix.l2g[n_xix + ind->xix_N] =(short int) temp2;
+			n_xix +=1;
+		}
+		if (xiy_involved[i]==2)
+		{
+			ind->xiy.l2G[n_xiy + ind->xiy_N] =(short int) i;
+			temp2 = i;
+			AOApplicationToPetsc(ao_y,1,&temp2);
+			ind->xiy.G2g[i] =(short int) temp2;
+			ind->xiy.l2g[n_xiy + ind->xiy_N] =(short int) temp2;
+			n_xiy +=1;
+		}
+	}
+
+	// output
+	/*
+	if (ptr_u->rank == 0)
+		{
+			for(i = 0; i<ind->xix_N; i++)
+			{
+				printf("%d \t",ind->xix.l2G[i]);
+			}
+			printf("\n");
+			for(i = 0; i<ind->xiy_N; i++)
+			{
+				printf("%d \t",ind->xiy.l2G[i]);
+			}
+			printf("\n");
+		}
+
+	if (ptr_u->rank == 0)
+	{
+		for(i = 0; i<g->Nx; i++)
+		{
+			for(j = 0; j<g->Ny; j++)
+				printf("%d \t",ind->xix.G2g[i+j*m]);
+			printf("\n");
+		}
+		printf("\n");
+		for(i = 0; i<g->Nx; i++)
+		{
+			for(j = 0; j<g->Ny; j++)
+				printf("%d \t",ind->xiy.G2g[i+j*m]);
+			printf("\n");
+		}
+	}
+	*/
+	AODestroy(&ao_x);
+	AODestroy(&ao_y);
 
 }
 
@@ -290,14 +488,15 @@ struct invol involvedIndices_grid(int cell, int m){
 	return involved;
 }
 
-// summing up all the element in the array
-int sumarray (int* a, int n){
+// summing up all the ones in the array
+int sumarray (int* a,int target, int n){
 
 	int i;
 	int sum = 0;
 
 	for(i=0; i<n; i++)
-		sum += a[i];
+		if (a[i] == target)
+			sum += a[i];
 
 	return sum;
 }

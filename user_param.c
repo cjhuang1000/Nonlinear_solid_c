@@ -9,8 +9,9 @@
 void set_grid (Grid_S* g);
 void set_solid(Solid* s, Grid_S* g);
 void set_constraint(Constraint_S *c,Grid_S* g,char bc);
+void set_processor(Grid_S* ptr_g, AppCtx* ptr_u);
 
-void user_param (Grid_S* ptr_g, Solid* ptr_s, TimeMarching* ptr_t,Constraint_S* ptr_c)
+void user_param (Grid_S* ptr_g, Solid* ptr_s, TimeMarching* ptr_t,Constraint_S* ptr_c, AppCtx* ptr_u)
 {
 
 	int		solid_resolution	= 5;
@@ -75,6 +76,10 @@ void user_param (Grid_S* ptr_g, Solid* ptr_s, TimeMarching* ptr_t,Constraint_S* 
 
 	/* setting constraint of*/
 	set_constraint(ptr_c,ptr_g,boundarycondition);
+
+	//
+	PetscMalloc1(ptr_g->N,&ptr_u->v2p);
+	set_processor(ptr_g, ptr_u);
 }
 
 
@@ -235,4 +240,22 @@ void set_constraint(Constraint_S *c,Grid_S* g,char bc){
 			break;
 
 	}
+}
+
+// assign cells to each processor
+
+void set_processor(Grid_S* ptr_g, AppCtx* ptr_u){
+
+	int i,j,m = ptr_g->Nx;
+	int m_mid = ptr_g->Nx/2, n_mid = ptr_g->Ny/2;
+    // in the test, rank must be 2
+
+	for(i=0; i<ptr_g->Nx; i++)
+			for(j=0;j<ptr_g->Ny;j++)
+			{
+				ptr_u->v2p[j*m+i] = -1;
+				//if (i/m_mid == ptr_u->rank)
+					ptr_u->v2p[j*m+i]=i/m_mid;
+			}
+
 }

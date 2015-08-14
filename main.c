@@ -8,6 +8,7 @@ Peggy Huang
 #include <stdlib.h>
 #include <math.h>
 
+#include <petscsys.h>
 #include <petsc.h>
 #include <petscvec.h>
 #include <petscmat.h>
@@ -48,6 +49,7 @@ int main(int argc,char **argv)
     Constraint_S    const_s;
     Field_S         field_s,field_s_old,field_s_k;
     Matrices_S      mat_s;
+    AppCtx          user;
 
     Mat				A,subA[4];
     Vec				RHS,subRHS[2], tempvec, tempvec2,x;
@@ -57,13 +59,16 @@ int main(int argc,char **argv)
     PetscErrorCode  ierr;
     PetscScalar  	c,c1;
 
+
     // =============== Setting up PETSC =================
 
     ierr = PetscInitialize(&argc,&argv,(char*)0,help);CHKERRQ(ierr);
+    MPI_Comm_rank(MPI_COMM_WORLD,&user.rank);
+    MPI_Comm_size(MPI_COMM_WORLD,&user.size);
 
     // =============== Parameter setting ================
 
-    user_param(&grid,&solid,&timem,&const_s); 
+    user_param(&grid,&solid,&timem,&const_s,&user);
 
     //for(i = 0; i<grid.Nx; i++)
     //{
@@ -72,14 +77,14 @@ int main(int argc,char **argv)
     //	printf("\n");
     //}
 
-    set_index(&ind,&grid,solid.boundary_sign,const_s.fsineumanndirichlet);
+    set_index(&ind,&grid,&user,solid.boundary_sign,const_s.fsineumanndirichlet);
     set_boundfunc(grid.dx);
 
     // =============== Constructing governing matrices and vectors ================
 
-    compute_matricesNonlinearStructure(&mat_s, &ind, &grid, &solid, const_s.fsineumanndirichlet); // ok to here
+    compute_matricesNonlinearStructure(&mat_s, &ind, &grid, &solid, const_s.fsineumanndirichlet);
     //MatView(mat_s.KLS,PETSC_VIEWER_STDOUT_SELF); // --------------
-
+    /*
     //MatView(mat_s.MS,PETSC_VIEWER_STDOUT_SELF);
     //MatView(mat_s.KLS,PETSC_VIEWER_STDOUT_SELF);
     //MatView(mat_s.NS,PETSC_VIEWER_STDOUT_SELF);
@@ -373,7 +378,7 @@ int main(int argc,char **argv)
 	VecView(field_s.xi,PETSC_VIEWER_STDOUT_SELF); // --------------
 	fieldCopy(&field_s,&field_s_old);
     }
-
+*/
 	PetscFinalize();
     return 0;
 }
