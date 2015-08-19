@@ -32,6 +32,45 @@ void fieldCopy (Field_S* ptr_f1, Field_S* ptr_f2)
 	VecCopy(ptr_f1->inc_dxi,ptr_f2->inc_dxi);
 }
 
+void setScattering(AppCtx* ptr_u, Index_S* ptr_i,Vec f)
+{
+
+	Vec				local_x,local_y;
+    IS 				is_xix,is_xiy;
+    PetscInt		*l2g_x,*l2g_y;
+    PetscInt		nx = ptr_i->xix_N + ptr_i->xix_ghoN, ny = ptr_i->xiy_N + ptr_i->xiy_ghoN;
+    int				i;
+
+    PetscMalloc1(nx,&l2g_x);
+    PetscMalloc1(ny,&l2g_y);
+
+    for(i = 0; i<nx; i++)
+    	l2g_x[i] = ptr_i->xix.l2g[i];
+
+    for(i = 0; i<ny; i++)
+        l2g_y[i] = ptr_i->xiy.l2g[i];
+
+	VecCreateSeq(PETSC_COMM_SELF,nx,&local_x);
+    VecCreateSeq(PETSC_COMM_SELF,ny,&local_y);
+
+    ISCreateGeneral(PETSC_COMM_SELF,nx,l2g_x,PETSC_OWN_POINTER,&is_xix);
+    ISCreateGeneral(PETSC_COMM_SELF,ny,l2g_y,PETSC_OWN_POINTER,&is_xiy);
+
+    //if (ptr_u->rank == 1)
+    //{
+    //	ISView(is_xix,PETSC_VIEWER_STDOUT_SELF);
+    //	ISView(is_xiy,PETSC_VIEWER_STDOUT_SELF);
+    //}
+
+    VecScatterCreate(f,is_xix,local_x,NULL,&ptr_u->scatter_x);
+    VecScatterCreate(f,is_xiy,local_y,NULL,&ptr_u->scatter_y);
+
+    //VecScatterView(ptr_u->scatter_x,PETSC_VIEWER_STDOUT_WORLD);
+    //VecScatterView(ptr_u->scatter_y,PETSC_VIEWER_STDOUT_WORLD);
+
+    VecDestroy(&local_x); VecDestroy(&local_y);
+    ISDestroy(&is_xix);  ISDestroy(&is_xiy);
+}
 
 int main(int argc,char **argv)
 {
@@ -52,13 +91,14 @@ int main(int argc,char **argv)
     AppCtx          user;
 
     Mat				A,subA[4];
-    Vec				RHS,subRHS[2], tempvec, tempvec2,x;
+    Vec				RHS,subRHS[2], tempvec, tempvec2,x,subx[2];
     IS 				isg[2];
     KSP				ksp;
     PC				pc;
     PetscErrorCode  ierr;
     PetscScalar  	c,c1;
 
+    PetscInt        mm,nn;
 
     // =============== Setting up PETSC =================
 
@@ -83,50 +123,47 @@ int main(int argc,char **argv)
     // =============== Constructing governing matrices and vectors ================
 
     compute_matricesNonlinearStructure(&mat_s, &ind, &grid, &solid, const_s.fsineumanndirichlet);
-    //MatView(mat_s.KLS,PETSC_VIEWER_STDOUT_SELF); // --------------
-    /*
-    //MatView(mat_s.MS,PETSC_VIEWER_STDOUT_SELF);
-    //MatView(mat_s.KLS,PETSC_VIEWER_STDOUT_SELF);
-    //MatView(mat_s.NS,PETSC_VIEWER_STDOUT_SELF);
+    //MatView(mat_s.KLS,PETSC_VIEWER_STDOUT_WORLD ); // --------------
+
+    //MatView(mat_s.MS,PETSC_VIEWER_STDOUT_WORLD);
+    //MatView(mat_s.KLS,PETSC_VIEWER_STDOUT_WORLD);
+    //MatView(mat_s.DS,PETSC_VIEWER_STDOUT_WORLD);
 
     n = ind.xix_N + ind.xiy_N;
-    VecCreate(PETSC_COMM_SELF,&mat_s.FS);
-    VecSetSizes(mat_s.FS,n,PETSC_DECIDE);
-    VecSetType(mat_s.FS,"seq");
+    VecCreate(PETSC_COMM_WORLD,&mat_s.FS);
+    VecSetSizes(mat_s.FS,n,ind.xi_gloN);
+    VecSetFromOptions(mat_s.FS);
 
     //================== Setting constraints ======================
 
-    VecCreate(PETSC_COMM_SELF,&const_s.xi_body);
-    VecSetSizes(const_s.xi_body,ind.xix_N +ind.xiy_N,PETSC_DECIDE);
-    VecSetType(const_s.xi_body,"seq");
+    VecDuplicate(mat_s.FS, &const_s.xi_body);
+    VecDuplicate(mat_s.FS, &const_s.xi_Neumann);
 
-    VecDuplicate(const_s.xi_body, &const_s.xi_Neumann);
+    VecCreate(PETSC_COMM_WORLD,&const_s.xi_Dirichlet);
+    VecSetSizes(const_s.xi_Dirichlet,ind.xix_Ncell_Dirichlet +ind.xiy_Ncell_Dirichlet,ind.xi_gloNcell_Dirichlet);
+    VecSetFromOptions(const_s.xi_Dirichlet);
 
-    VecCreate(PETSC_COMM_SELF,&const_s.xi_Dirichlet);
-    VecSetSizes(const_s.xi_Dirichlet,ind.xix_Ncell_Dirichlet +ind.xiy_Ncell_Dirichlet,PETSC_DECIDE);
-    VecSetType(const_s.xi_Dirichlet,"seq");
-
-    VecCreate(PETSC_COMM_SELF,&tempvec);
-    VecSetSizes(tempvec,ind.xix_Ncell_Neumann +ind.xiy_Ncell_Neumann,PETSC_DECIDE);
-    VecSetType(tempvec,"seq");
+    VecCreate(PETSC_COMM_WORLD,&tempvec);
+    VecSetSizes(tempvec,ind.xix_Ncell_Neumann +ind.xiy_Ncell_Neumann,ind.xi_gloNcell_Neumann);
+    VecSetFromOptions(tempvec);
 
     for(i=0; i<ind.xix_N; i++)
-    	VecSetValue(const_s.xi_body,i,const_s.body_funct_x[ind.xix.g2G[i]], INSERT_VALUES);
+    	VecSetValue(const_s.xi_body,ind.xix.l2g[i],const_s.body_funct_x[ind.xix.l2G[i]], INSERT_VALUES);
 
     for(i=0; i<ind.xiy_N; i++)
-        VecSetValue(const_s.xi_body,i+ind.xix_N,const_s.body_funct_y[ind.xiy.g2G[i]], INSERT_VALUES);
+        VecSetValue(const_s.xi_body,ind.xiy.l2g[i],const_s.body_funct_y[ind.xiy.l2G[i]], INSERT_VALUES);
 
     for(i=0; i<ind.xix_Ncell_Dirichlet; i++)
-    	VecSetValue(const_s.xi_Dirichlet,i,const_s.dirichlet_dxi_x[ind.xix.c2C_dirichlet[i]], INSERT_VALUES);
+    	VecSetValue(const_s.xi_Dirichlet,ind.xix.C2c_dirichlet[ind.xix.c2C_dirichlet[i]],const_s.dirichlet_dxi_x[ind.xix.c2C_dirichlet[i]], INSERT_VALUES);
 
     for(i=0; i<ind.xiy_Ncell_Dirichlet; i++)
-        VecSetValue(const_s.xi_Dirichlet,i+ind.xix_Ncell_Dirichlet,const_s.dirichlet_dxi_y[ind.xiy.c2C_dirichlet[i]], INSERT_VALUES);
+        VecSetValue(const_s.xi_Dirichlet,ind.xiy.C2c_dirichlet[ind.xiy.c2C_dirichlet[i]],const_s.dirichlet_dxi_y[ind.xiy.c2C_dirichlet[i]], INSERT_VALUES);
 
     for(i=0; i<ind.xix_Ncell_Neumann; i++)
-        VecSetValue(tempvec,i,const_s.neumann_funct_x[ind.xix.c2C_neumann[i]], INSERT_VALUES);
+        VecSetValue(tempvec,ind.xix.C2c_neumann[ind.xix.c2C_neumann[i]],const_s.neumann_funct_x[ind.xix.c2C_neumann[i]], INSERT_VALUES);
 
     for(i=0; i<ind.xiy_Ncell_Neumann; i++)
-        VecSetValue(tempvec,i+ind.xix_Ncell_Neumann,const_s.neumann_funct_y[ind.xiy.c2C_neumann[i]], INSERT_VALUES);
+        VecSetValue(tempvec,ind.xiy.C2c_neumann[ind.xiy.c2C_neumann[i]],const_s.neumann_funct_y[ind.xiy.c2C_neumann[i]], INSERT_VALUES);
 
     VecAssemblyBegin(const_s.xi_body);
     VecAssemblyEnd(const_s.xi_body);
@@ -137,7 +174,6 @@ int main(int argc,char **argv)
 
     MatMult(mat_s.NS,tempvec,const_s.xi_Neumann);
     VecDestroy(&tempvec);
-
 
     // =============== Initial setting of field_s ================
 
@@ -157,18 +193,24 @@ int main(int argc,char **argv)
 
     fieldCopy(&field_s,&field_s_old);
 
-    // ================ Time marching ===============================
+    // ================ Setting Scattering ==========================
 
+    setScattering(&user, &ind, field_s.xi);
+
+    // ================ Time marching ===============================
 
     // Setup vec and mat
     VecDuplicate(field_s.xi, &subRHS[0]);
     VecDuplicate(const_s.xi_Dirichlet, &subRHS[1]);
+    VecDuplicate(field_s.xi, &subx[0]);
+    VecDuplicate(const_s.xi_Dirichlet, &subx[1]);
     VecDuplicate(field_s.xi,&tempvec);
 
-	n = ind.xix_Ncell_Dirichlet + ind.xiy_Ncell_Dirichlet;
+    VecCreateNest(PETSC_COMM_WORLD,2,NULL,subx,&x);
 
-	MatCreate(PETSC_COMM_SELF,&subA[3]);
-	MatSetSizes(subA[3],n,n,n,n);
+    n = ind.xix_Ncell_Dirichlet +ind.xiy_Ncell_Dirichlet;
+	MatCreate(PETSC_COMM_WORLD,&subA[3]);
+	MatSetSizes(subA[3],n,n,ind.xi_gloNcell_Dirichlet,ind.xi_gloNcell_Dirichlet);
 	MatSetFromOptions(subA[3]);
 	MatSetUp(subA[3]);
 	MatZeroEntries(subA[3]);
@@ -177,21 +219,16 @@ int main(int argc,char **argv)
 
 	MatDuplicate(mat_s.DS,MAT_COPY_VALUES,&subA[1]); // DS
 	MatTranspose(mat_s.DS,MAT_INITIAL_MATRIX,&subA[2]);			// DS^T
-
 	MatDuplicate(mat_s.MS,MAT_DO_NOT_COPY_VALUES,&subA[0]);
 
-	n = ind.xix_N + ind.xiy_N + ind.xix_Ncell_Dirichlet + ind.xiy_Ncell_Dirichlet;
-	VecCreate(PETSC_COMM_SELF,&RHS);
-	VecSetSizes(RHS,n,PETSC_DECIDE);
-	VecSetType(RHS,"seq");
-	VecDuplicate(RHS,&x);
+	// ----------------------------
 
 	for(step = 1; step <= timem.nstep; step++)
     {
     	// first iteration
 
 		timestep = step*timem.dt;
-	    compute_matricesNonlinearStructure_update(&mat_s, &ind, &grid, &solid, &field_s_old);
+	    compute_matricesNonlinearStructure_update(&mat_s, &ind, &grid, &solid, &user, &field_s_old);
 
 	    // Governing matrix A
 	    MatCopy(mat_s.MS,subA[0],DIFFERENT_NONZERO_PATTERN);
@@ -203,14 +240,12 @@ int main(int argc,char **argv)
 	    c = timem.dt * timem.theta / timem.delta;
 	    MatAXPY(subA[0],c,mat_s.KNS,DIFFERENT_NONZERO_PATTERN);
 
-	    MatCreateNest(PETSC_COMM_SELF,2,NULL,2,NULL,subA,&A);
+	    MatCreateNest(PETSC_COMM_WORLD,2,NULL,2,NULL,subA,&A); // !!!!
 	    MatNestGetISs(A,isg,NULL);
 
 	    // RHS
-	    VecGetSubVector(RHS, isg[0], &subRHS[0]);
 	    c = 1.0;
 	    VecWAXPY(subRHS[0],c,const_s.xi_Neumann,const_s.xi_body);
-
 	    c = -solid.damping[0]; c1 = 1/timem.delta -1;
 	    VecCopy(field_s_old.ddxi,tempvec);
 	    VecAXPBY(tempvec,c,c1,field_s_old.dxi);
@@ -227,18 +262,18 @@ int main(int argc,char **argv)
 	   	MatMultAdd(mat_s.KNS,tempvec,subRHS[0],subRHS[0]);
 	   	c = -1.0;
 	    ierr = VecAXPY(subRHS[0],c,mat_s.FS); CHKERRQ(ierr);
-	   	VecRestoreSubVector(RHS, isg[0], &subRHS[0]);
 
-	   	VecGetSubVector(RHS, isg[1], &subRHS[1]);
 	   	VecCopy(field_s_old.dxi,tempvec);
 	   	VecScale(tempvec,c);
 	   	MatMult(subA[2],tempvec,subRHS[1]);
-	   	VecRestoreSubVector(RHS, isg[1], &subRHS[1]);
+
+	   	VecCreateNest(PETSC_COMM_WORLD,2,NULL,subRHS,&RHS);
 
 		// seting the KSP solver
-	    KSPCreate(PETSC_COMM_SELF,&ksp);
-	    KSPSetType(ksp, KSPFGMRES);
+	    KSPCreate(PETSC_COMM_WORLD,&ksp);
+	    KSPSetType(ksp, KSPGMRES);
 		KSPSetOperators(ksp,A,A);
+		KSPSetTolerances(ksp,PETSC_DEFAULT,1.e-16,PETSC_DEFAULT,PETSC_DEFAULT);
 		KSPSetFromOptions(ksp);
 		KSPGetPC(ksp,&pc);
 		PCFieldSplitSetIS(pc,"0",isg[0]);
@@ -246,9 +281,20 @@ int main(int argc,char **argv)
 
 		// solve
 		ierr = KSPSolve(ksp,RHS,x); CHKERRQ(ierr);
-		VecGetSubVector(x,isg[0],&tempvec2);
+
+		// check ###############
+		Vec checkvec;
+		VecDuplicate(RHS,&checkvec);
+		c = -1.0;
+		MatMult(A,x,checkvec);
+		VecAXPY(checkvec,c,RHS);
+		VecNestGetSubVec(checkvec,0,&tempvec2);
+		VecView(tempvec2,PETSC_VIEWER_STDOUT_WORLD);
+		// #####################
+		/*
+		VecNestGetSubVec(x,0,&tempvec2);
+		MatView(subA[0],PETSC_VIEWER_STDOUT_WORLD);
 		VecCopy(tempvec2,field_s.inc_dxi);
-		VecRestoreSubVector(x,isg[0],&tempvec2);
 
 		//update
 		c = (timem.delta - 1.0)*timem.dt;  c1 = 1/timem.delta/timem.dt;
@@ -269,12 +315,13 @@ int main(int argc,char **argv)
 		residue1 = residue0;
 
 		fieldCopy(&field_s,&field_s_k);
+		//VecView(field_s.xi,PETSC_VIEWER_STDOUT_WORLD);
 
 		// while loop
 		while ( (residue1/residue0) > solid.threshold)
 		{
 			printf("looping\n");
-			compute_matricesNonlinearStructure_update(&mat_s, &ind, &grid, &solid, &field_s_k);
+			compute_matricesNonlinearStructure_update(&mat_s, &ind, &grid, &solid, &user, &field_s_old);
 
 			// Governing matrix A
 			MatCopy(mat_s.MS,subA[0],DIFFERENT_NONZERO_PATTERN); CHKERRQ(ierr);
@@ -285,10 +332,9 @@ int main(int argc,char **argv)
 			c = timem.dt * timem.theta / timem.delta;
 			MatAXPY(subA[0],c,mat_s.KNS,DIFFERENT_NONZERO_PATTERN);
 
-			MatCreateNest(PETSC_COMM_SELF,2,NULL,2,NULL,subA,&A);
+			MatCreateNest(PETSC_COMM_WORLD,2,NULL,2,NULL,subA,&A);
 
 			// RHS
-			VecGetSubVector(RHS, isg[0], &subRHS[0]);
 			c = 1.0;
 			VecWAXPY(subRHS[0],c,const_s.xi_Neumann,const_s.xi_body);
 
@@ -319,17 +365,17 @@ int main(int argc,char **argv)
 
 			c = -1.0;
 			VecAXPY(subRHS[0],c,mat_s.FS);
-			VecRestoreSubVector(RHS, isg[0], &subRHS[0]);
+			//VecView(subRHS[0],PETSC_VIEWER_STDOUT_WORLD);
 
 			VecCopy(field_s_old.dxi,tempvec);
 			VecScale(tempvec,c);
-			VecGetSubVector(RHS, isg[1], &subRHS[1]);
 			MatMult(subA[2],tempvec,subRHS[1]);
-			VecRestoreSubVector(RHS, isg[1], &subRHS[1]);
+
+		   	VecCreateNest(PETSC_COMM_WORLD,2,NULL,subRHS,&RHS);
 
 			// seting the KSP solver
 			KSPDestroy(&ksp);
-			KSPCreate(PETSC_COMM_SELF,&ksp);
+			KSPCreate(PETSC_COMM_WORLD,&ksp);
 			KSPSetType(ksp, KSPFGMRES);
 			KSPSetOperators(ksp,A,A);
 			KSPSetFromOptions(ksp);
@@ -339,9 +385,8 @@ int main(int argc,char **argv)
 
 			// solve
 			KSPSolve(ksp,RHS,x);
-			VecGetSubVector(x,isg[0],&tempvec2);
+			VecNestGetSubVec(x,0,&tempvec2);
 			VecCopy(tempvec2,field_s.inc_dxi);
-			VecRestoreSubVector(x,isg[0],&tempvec2);
 
 			//update
 			c = 1.0; c1  = -1.0;
@@ -363,22 +408,19 @@ int main(int argc,char **argv)
 			VecWAXPY(tempvec,c,field_s_k.xi,field_s.xi);
 			VecNorm(tempvec,NORM_2,&residue1);
 
-			//VecView(field_s_k.xi,PETSC_VIEWER_STDOUT_SELF); // --------------
-			//VecView(field_s.xi,PETSC_VIEWER_STDOUT_SELF); // --------------
-			//VecView(tempvec,PETSC_VIEWER_STDOUT_SELF); // --------------
-
 			fieldCopy(&field_s,&field_s_k);
 
-			printf("residue1 ratio: %e %e %e\n", residue1,residue0,residue1/residue0);
+			//if (user.rank == 0)
+			//	printf("residue1 ratio: %e %e %e\n", residue1,residue0,residue1/residue0);
 			//residue1 = residue0*0.00001;
 
-	}
+	}*/
 	// output
 	//if(step%timem.nstep_output == 0)
-	VecView(field_s.xi,PETSC_VIEWER_STDOUT_SELF); // --------------
+	//VecView(field_s.xi,PETSC_VIEWER_STDOUT_WORLD); // --------------
 	fieldCopy(&field_s,&field_s_old);
     }
-*/
+
 	PetscFinalize();
     return 0;
 }

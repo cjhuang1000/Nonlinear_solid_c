@@ -228,28 +228,30 @@ void compute_matricesNonlinearStructure(Matrices_S* ptr_ms, Index_S* ptr_i, Grid
 
     /*initialize the matrices MS, KLS, NS, DS */
 
-    k = ptr_i->xi_gloN;
+    ii = ptr_i->xix_N + ptr_i->xiy_N;
 
     MatCreate(MPI_COMM_WORLD,&(MS_full));
-    MatSetSizes(MS_full,PETSC_DECIDE,PETSC_DECIDE,k,k);
+    MatSetSizes(MS_full,ii,ii,ptr_i->xi_gloN,ptr_i->xi_gloN);
     MatSetFromOptions(MS_full);
     MatSetUp(MS_full);
     MatZeroEntries(MS_full);
 
     MatCreate(MPI_COMM_WORLD,&(KLS_full));
-    MatSetSizes(KLS_full,PETSC_DECIDE,PETSC_DECIDE,k,k);
+    MatSetSizes(KLS_full,ii,ii,ptr_i->xi_gloN,ptr_i->xi_gloN);
     MatSetFromOptions(KLS_full);
     MatSetUp(KLS_full);
     MatZeroEntries(KLS_full);
 
+    jj = ptr_i->xix_Ncell_Neumann + ptr_i->xiy_Ncell_Neumann;
     MatCreate(MPI_COMM_WORLD,&(NS_full));
-    MatSetSizes(NS_full,PETSC_DECIDE,PETSC_DECIDE,k,ptr_i->xi_gloNcell_Neumann);
+    MatSetSizes(NS_full,ii,jj,ptr_i->xi_gloN,ptr_i->xi_gloNcell_Neumann);
     MatSetFromOptions(NS_full);
     MatSetUp(NS_full);
     MatZeroEntries(NS_full);
 
+    jj = ptr_i->xix_Ncell_Dirichlet + ptr_i->xiy_Ncell_Dirichlet;
     MatCreate(MPI_COMM_WORLD,&(DS_full));
-    MatSetSizes(DS_full,PETSC_DECIDE,PETSC_DECIDE,k,ptr_i->xi_gloNcell_Dirichlet);
+    MatSetSizes(DS_full,ii,jj,ptr_i->xi_gloN,ptr_i->xi_gloNcell_Dirichlet);
     MatSetFromOptions(DS_full);
     MatSetUp(DS_full);
     MatZeroEntries(DS_full);
@@ -418,16 +420,48 @@ void compute_matricesNonlinearStructure(Matrices_S* ptr_ms, Index_S* ptr_i, Grid
     MatAssemblyEnd(DS_full,MAT_FINAL_ASSEMBLY);
 
     //Reduce system
-
+    if ((ptr_i->xix_N + ptr_i->xiy_N) == 18)
+        {
+        		for(i=0;i<ptr_g->Nx;i++)
+         		{
+        			for(j=0;j<ptr_g->Ny;j++)
+         				printf("%d \t",ptr_i->xix.C2c_dirichlet[i+ptr_g->Nx*j]);
+         			printf("\n");
+         		}
+         		printf("\n");
+         		for(i=0;i<ptr_g->Nx;i++)
+         		{
+         			for(j=0;j<ptr_g->Ny;j++)
+         				printf("%d \t",ptr_i->xiy.C2c_dirichlet[i+ptr_g->Nx*j]);
+         			printf("\n");
+         		}
+         		printf(" --- \n");
+        }
     reduce_system(ptr_g,ptr_i,&MS_full,&KLS_full,&NS_full,&DS_full);
-    /*
+    if ((ptr_i->xix_N_before + ptr_i->xiy_N_before) == 18)
+        {
+        		for(i=0;i<ptr_g->Nx;i++)
+         		{
+        			for(j=0;j<ptr_g->Ny;j++)
+         				printf("%d \t",ptr_i->xix.C2c_dirichlet[i+ptr_g->Nx*j]);
+         			printf("\n");
+         		}
+         		printf("\n");
+         		for(i=0;i<ptr_g->Nx;i++)
+         		{
+         			for(j=0;j<ptr_g->Ny;j++)
+         				printf("%d \t",ptr_i->xiy.C2c_dirichlet[i+ptr_g->Nx*j]);
+         			printf("\n");
+         		}
+         		printf(" --- \n");
+        }
     //Set the reduced governing matrices
     MatGetSubMatrix(MS_full,ptr_i->is_xi,ptr_i->is_xi,MAT_INITIAL_MATRIX,&ptr_ms->MS);
     MatGetSubMatrix(KLS_full,ptr_i->is_xi,ptr_i->is_xi,MAT_INITIAL_MATRIX,&ptr_ms->KLS);
     MatGetSubMatrix(KLS_full,ptr_i->is_xi,ptr_i->is_xi,MAT_INITIAL_MATRIX,&ptr_ms->KNS); // just for initialization
     MatGetSubMatrix(NS_full,ptr_i->is_xi,ptr_i->is_neu,MAT_INITIAL_MATRIX,&ptr_ms->NS);
     MatGetSubMatrix(DS_full,ptr_i->is_xi,ptr_i->is_dir,MAT_INITIAL_MATRIX,&ptr_ms->DS);
-     */
+
     // free the memory
     MatDestroy(&MS_full); MatDestroy(&KLS_full); MatDestroy(&NS_full); MatDestroy(&DS_full);
 }
@@ -1054,8 +1088,10 @@ void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat
     IS 			ixy;
     VecScatter  scatter_MS,scatter_KS;
     
+    PetscMPIInt	rank;
+
     VecCreate(PETSC_COMM_WORLD,&MS_diag_vec);
-    VecSetSizes(MS_diag_vec,PETSC_DECIDE,ptr_i->xi_gloN);
+    VecSetSizes(MS_diag_vec,ptr_i->xix_N + ptr_i->xiy_N,ptr_i->xi_gloN);
     VecSetFromOptions(MS_diag_vec);
     VecDuplicate(MS_diag_vec,&KLS_diag_vec);
 
@@ -1089,7 +1125,8 @@ void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat
     //VecView(MS_diag_vec,PETSC_VIEWER_STDOUT_SELF); //
     //VecView(KLS_diag_vec,PETSC_VIEWER_STDOUT_SELF); //
 
-    // ok to here
+    MPI_Comm_rank(MPI_COMM_WORLD,&rank);
+
     // =================  xix, xiy ======================
     //List of the indices of variables which are not outside of the domain
     for(i=0; i<ptr_i->xi_gloN;i++)
@@ -1111,7 +1148,7 @@ void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat
     {
     	if(index_keep_xi[ptr_i->xix.l2g[i]] != -1)
     	{
-    		ptr_i->xix.l2g[n_xix] = ptr_i->xix.l2g[i];
+    		ptr_i->xix.l2g[n_xix] = index_keep_xi[ptr_i->xix.l2g[i]];
     		ptr_i->xix.l2G[n_xix] = ptr_i->xix.l2G[i];
     		n_xix ++;  // new xix_N
     	}
@@ -1121,7 +1158,7 @@ void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat
     {
         if(index_keep_xi[ptr_i->xix.l2g[i]] != -1)
         {
-        	ptr_i->xix.l2g[n_xix + n_xix_gho] = ptr_i->xix.l2g[i];
+        	ptr_i->xix.l2g[n_xix + n_xix_gho] = index_keep_xi[ptr_i->xix.l2g[i]];
         	ptr_i->xix.l2G[n_xix + n_xix_gho] = ptr_i->xix.l2G[i];
         	n_xix_gho ++;  // new xix_N
         }
@@ -1131,7 +1168,7 @@ void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat
     {
     	if(index_keep_xi[ptr_i->xiy.l2g[i]] != -1)
     	{
-    		ptr_i->xiy.l2g[n_xiy] = ptr_i->xiy.l2g[i];
+    		ptr_i->xiy.l2g[n_xiy] = index_keep_xi[ptr_i->xiy.l2g[i]];
     		ptr_i->xiy.l2G[n_xiy] = ptr_i->xiy.l2G[i];
     		n_xiy ++;  // new xix_N
     	}
@@ -1141,12 +1178,12 @@ void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat
     {
         if(index_keep_xi[ptr_i->xiy.l2g[i]] != -1)
         {
-        	ptr_i->xiy.l2g[n_xiy + n_xiy_gho] = ptr_i->xiy.l2g[i];
+        	ptr_i->xiy.l2g[n_xiy + n_xiy_gho] = index_keep_xi[ptr_i->xiy.l2g[i]];
         	ptr_i->xiy.l2G[n_xiy + n_xiy_gho] = ptr_i->xiy.l2G[i];
         	n_xiy_gho ++;  // new xix_N
         }
     }
-    /*
+
     //temp = n_xix + n_xiy;
     //MPI_Scan(&temp,&ns_xixy_new,1,MPIU_INT,MPI_SUM,PETSC_COMM_WORLD); // get the starting index of xi x,y on each processor
     //ns_xixy_new -= temp;
@@ -1158,8 +1195,10 @@ void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat
     {
         ptr_i->xix.G2g_before[i] = ptr_i->xix.G2g[i];
         ptr_i->xiy.G2g_before[i] = ptr_i->xiy.G2g[i];
-        ptr_i->xix.G2g[i] = index_keep_xi[ptr_i->xix.G2g[i]];
-        ptr_i->xiy.G2g[i] = index_keep_xi[ptr_i->xiy.G2g[i]];
+        if (ptr_i->xix.G2g[i] != -1)
+        	ptr_i->xix.G2g[i] = index_keep_xi[ptr_i->xix.G2g[i]];
+        if (ptr_i->xiy.G2g[i] != -1)
+        	ptr_i->xiy.G2g[i] = index_keep_xi[ptr_i->xiy.G2g[i]];
     }
 
     PetscMalloc1(n_xix + n_xiy,&is_xi);   // local index
@@ -1212,8 +1251,10 @@ void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat
 
     for(i= 0 ; i< ptr_g->N ;i++)
     {
-    	ptr_i->xix.C2c_dirichlet[i] = index_keep_stag_Dirichlet[ptr_i->xix.C2c_dirichlet[i]];
-        ptr_i->xiy.C2c_dirichlet[i] = index_keep_stag_Dirichlet[ptr_i->xiy.C2c_dirichlet[i]];
+    	if (ptr_i->xix.C2c_dirichlet[i] != -1)
+    		ptr_i->xix.C2c_dirichlet[i] = index_keep_stag_Dirichlet[ptr_i->xix.C2c_dirichlet[i]];
+    	if (ptr_i->xiy.C2c_dirichlet[i] != -1)
+    		ptr_i->xiy.C2c_dirichlet[i] = index_keep_stag_Dirichlet[ptr_i->xiy.C2c_dirichlet[i]];
     }
 
     PetscMalloc1(n_cellx_dir + n_celly_dir,&is_dir);
@@ -1228,10 +1269,12 @@ void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat
     	}
     }
 
+
     //List of the indices of cells acting on Neumann boundary
     // ========================= neu ===========================
 
-    for(j=0;j< ptr_i->xix_gloNcell_Neumann; j++)
+
+    for(j=0;j< ptr_i->xi_gloNcell_Neumann; j++)
      {
          if (NS_norm[j] != 0)
          {
@@ -1243,7 +1286,7 @@ void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat
      }
 
      temp = ptr_i->xix_Ncell_Neumann + ptr_i->xiy_Ncell_Neumann;
-     MPI_Scan(&temp,&ns_cellxy_dir,1,MPIU_INT,MPI_SUM,PETSC_COMM_WORLD); // get the starting index of xi x,y on each processor
+     MPI_Scan(&temp,&ns_cellxy_neu,1,MPIU_INT,MPI_SUM,PETSC_COMM_WORLD); // get the starting index of xi x,y on each processor
      ns_cellxy_neu -= temp;
 
 
@@ -1267,8 +1310,10 @@ void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat
 
      for(i= 0 ; i< ptr_g->N ;i++)
      {
-     	ptr_i->xix.C2c_neumann[i] = index_keep_stag_Neumann[ptr_i->xix.C2c_neumann[i]];
-        ptr_i->xiy.C2c_neumann[i] = index_keep_stag_Neumann[ptr_i->xiy.C2c_neumann[i]];
+    	 if (ptr_i->xix.C2c_neumann[i] != -1)
+    		 ptr_i->xix.C2c_neumann[i] = index_keep_stag_Neumann[ptr_i->xix.C2c_neumann[i]];
+    	 if (ptr_i->xiy.C2c_neumann[i] != -1)
+    		 ptr_i->xiy.C2c_neumann[i] = index_keep_stag_Neumann[ptr_i->xiy.C2c_neumann[i]];
      }
 
      PetscMalloc1(n_cellx_neu + n_celly_neu,&is_neu);
@@ -1282,6 +1327,23 @@ void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat
      		temp++;
      	}
      }
+
+   //if (rank == 1)
+   // 	{
+   // 		for(i = 0; i<ptr_g->Nx; i++)
+   // 		{
+   // 			for(j = 0; j<ptr_g->Ny; j++)
+   // 				printf("%d \t",ptr_i->xix.C2c_neumann[i+j*ptr_g->Nx]);
+   // 			printf("\n");
+   // 		}
+   // 		printf("\n");
+   // 		for(i = 0; i<ptr_g->Nx; i++)
+   // 		{
+   // 			for(j = 0; j<ptr_g->Ny; j++)
+   // 				printf("%d \t",ptr_i->xiy.C2c_neumann[i+j*ptr_g->Nx]);
+   // 			printf("\n");
+   // 		}
+   // 	}
 
     // --------Update the l2g, l2G and c2C arrays ------------
 
@@ -1311,6 +1373,8 @@ void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat
     reduce_vector(&(ptr_i->xix.c2C_dirichlet),ptr_i->xix_Ncell_Dirichlet,n_cellx_dir);
     reduce_vector(&(ptr_i->xiy.c2C_dirichlet),ptr_i->xiy_Ncell_Dirichlet,n_celly_dir);
 
+	ptr_i->xi_gloN_before = ptr_i->xi_gloN;
+	ptr_i->xix_gloN_before = ptr_i->xix_gloN;
 
 	MPI_Reduce(&n_xix, &ptr_i->xix_gloN, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
 	MPI_Bcast(&ptr_i->xix_gloN, 1, MPI_INT, 0, MPI_COMM_WORLD);
@@ -1333,9 +1397,6 @@ void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat
 	MPI_Bcast(&ptr_i->xi_gloNcell_Dirichlet, 1, MPI_INT, 0, MPI_COMM_WORLD);
 	ptr_i->xi_gloNcell_Dirichlet += ptr_i->xix_gloNcell_Dirichlet;
 
-	ptr_i->xi_gloN_before = ptr_i->xi_gloN;
-	ptr_i->xix_gloN_before = ptr_i->xix_gloN;
-
     ptr_i->xix_N_before = ptr_i->xix_N;
     ptr_i->xiy_N_before = ptr_i->xiy_N;
     ptr_i->xix_N = n_xix;
@@ -1344,8 +1405,9 @@ void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat
     ptr_i->xiy_Ncell_Neumann = n_celly_neu;
     ptr_i->xix_Ncell_Dirichlet = n_cellx_dir;
     ptr_i->xiy_Ncell_Dirichlet = n_celly_dir;
+    ptr_i->xix_ghoN = n_xix_gho;
+    ptr_i->xiy_ghoN = n_xiy_gho;
 
-    // to here
     ISCreateGeneral(MPI_COMM_WORLD,n_xix+n_xiy,is_xi,PETSC_COPY_VALUES,&ptr_i->is_xi);
     ISCreateGeneral(MPI_COMM_WORLD,n_cellx_neu + n_celly_neu,is_neu,PETSC_COPY_VALUES,&ptr_i->is_neu);
     ISCreateGeneral(MPI_COMM_WORLD,n_cellx_dir + n_celly_dir,is_dir,PETSC_COPY_VALUES,&ptr_i->is_dir);
@@ -1365,7 +1427,7 @@ void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat
     PetscFree(is_neu);
     VecDestroy(&MS_diag_vec);
     VecDestroy(&KLS_diag_vec);
-    */
+
     VecScatterDestroy(&scatter_MS);
     VecScatterDestroy(&scatter_KS);
 }
@@ -1374,15 +1436,13 @@ void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat
 void reduce_vector(short int** a, int n_b, int n_a)
 {
     int i;
-    short int* temp1, temp2;
+    short int* temp1;
 
     temp1 = (short int *) malloc(sizeof(short int)*n_a);
     for(i=0;i<n_a;i++)
         temp1[i] = (*a)[i];
 
-    temp2 = *a;
+    free(*a);
     *a = temp1;
-
-    free(temp2);
 
 }

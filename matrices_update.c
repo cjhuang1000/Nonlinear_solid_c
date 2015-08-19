@@ -78,12 +78,12 @@ double m2pl,mpl,lambda,mu;
 
 
 
-void compute_grad_update(struct Grad_Dist *ptr_dx, Field_S* ptr_f_old, Index_S* ptr_i, Grid_S* ptr_g);
+void compute_grad_update(struct Grad_Dist *ptr_dx, Field_S* ptr_f_old, Index_S* ptr_i, Grid_S* ptr_g, AppCtx* ptr_u);
 struct Mcell0 compute_matricesCell_interior(struct SSG_subgrid stress, struct SSG_subgrid grad_xi);
 struct Mcell0 compute_matricesCell_bound_update(int cell_i,struct SSG_subgrid stress, struct SSG_subgrid grad_xi);
 
 
-void compute_matricesNonlinearStructure_update(Matrices_S* ptr_ms, Index_S* ptr_i, Grid_S* ptr_g, Solid* ptr_s, Field_S* ptr_f){
+void compute_matricesNonlinearStructure_update(Matrices_S* ptr_ms, Index_S* ptr_i, Grid_S* ptr_g, Solid* ptr_s, AppCtx* ptr_u,Field_S* ptr_f){
 
     int                 nx   = ptr_g->Nx,ny   = ptr_g->Ny;
     int                 i,j,k,cell_i;
@@ -106,37 +106,38 @@ void compute_matricesNonlinearStructure_update(Matrices_S* ptr_ms, Index_S* ptr_
     lambda = ptr_s->lambda;
     mu = ptr_s->mu;
 
-
-    /*initialize the temporary matrices @@ */
+    // initialize the temporary matrices @@
 
     //compute gradient
 
-    Dx.center_xx = dmatrix(0,nx-1,0,ny-1);
-    Dx.vertex_xy = dmatrix(0,nx-1,0,ny-1);
-    Dx.vertex_yx = dmatrix(0,nx-1,0,ny-1);
-    Dx.center_yy = dmatrix(0,nx-1,0,ny-1);
+    Dx.center_xx = dmatrix(ptr_u->dmx_s,ptr_u->dmx_e+1,ptr_u->dmy_s,ptr_u->dmy_e+1);
+    Dx.vertex_xy = dmatrix(ptr_u->dmx_s,ptr_u->dmx_e+1,ptr_u->dmy_s,ptr_u->dmy_e+1);
+    Dx.vertex_yx = dmatrix(ptr_u->dmx_s,ptr_u->dmx_e+1,ptr_u->dmy_s,ptr_u->dmy_e+1);
+    Dx.center_yy = dmatrix(ptr_u->dmx_s,ptr_u->dmx_e+1,ptr_u->dmy_s,ptr_u->dmy_e+1);
 
-    compute_grad_update(&Dx, ptr_f, ptr_i, ptr_g);
-
+    compute_grad_update(&Dx, ptr_f, ptr_i, ptr_g, ptr_u); // ok to here
 
     k = ptr_i->xix_N_before + ptr_i->xiy_N_before;
 
-    MatCreate(PETSC_COMM_SELF,&(KLS_full));
-    MatSetSizes(KLS_full,k,k,k,k);
+    MatCreate(PETSC_COMM_WORLD,&(KLS_full));
+    MatSetSizes(KLS_full,k,k,ptr_i->xi_gloN_before,ptr_i->xi_gloN_before);
     MatSetFromOptions(KLS_full);
     MatSetUp(KLS_full);
     MatZeroEntries(KLS_full);
 
-    MatCreate(PETSC_COMM_SELF,&(KNS_full));
-    MatSetSizes(KNS_full,k,k,k,k);
+    MatCreate(PETSC_COMM_WORLD,&(KNS_full));
+    MatSetSizes(KNS_full,k,k,ptr_i->xi_gloN_before,ptr_i->xi_gloN_before);
     MatSetFromOptions(KNS_full);
     MatSetUp(KNS_full);
     MatZeroEntries(KNS_full);
 
-    VecCreate(PETSC_COMM_SELF,&FS_full);
-    VecSetSizes(FS_full,k,PETSC_DECIDE);
-    VecSetType(FS_full,"seq");
+    VecCreate(PETSC_COMM_WORLD,&FS_full);
+    VecSetSizes(FS_full,k,ptr_i->xi_gloN_before);
+    VecSetFromOptions(FS_full);
     VecZeroEntries(FS_full);
+
+    //printf(" %d %d, %d, %d, %d \n",ptr_u->rank,ptr_u->dmx_s, ptr_u->dmx_e, ptr_u->dmy_s, ptr_u->dmy_e);
+
 
     // =========  for interior cells ===========
     for(i=0;i<ptr_i->cell_N_interior;i++)
@@ -147,7 +148,7 @@ void compute_matricesNonlinearStructure_update(Matrices_S* ptr_ms, Index_S* ptr_
        for(j=0;j<6;j++)
        {
             index_xix[j] = ptr_i->xix.G2g_before[index_cell.xix[j]];
-            index_xiy[j] = ptr_i->xiy.G2g_before[index_cell.xiy[j]] + ptr_i->xix_N_before;
+            index_xiy[j] = ptr_i->xiy.G2g_before[index_cell.xiy[j]];
        }
 
         //calculate gradient in each subcell
@@ -227,7 +228,7 @@ void compute_matricesNonlinearStructure_update(Matrices_S* ptr_ms, Index_S* ptr_
        for(j=0;j<6;j++)
        {
             index_xix[j] = ptr_i->xix.G2g_before[index_cell.xix[j]];
-            index_xiy[j] = ptr_i->xiy.G2g_before[index_cell.xiy[j]]+ ptr_i->xix_N_before;
+            index_xiy[j] = ptr_i->xiy.G2g_before[index_cell.xiy[j]];
         }
 
        for(j=0;j<4;j++)
@@ -308,7 +309,6 @@ void compute_matricesNonlinearStructure_update(Matrices_S* ptr_ms, Index_S* ptr_
     MatGetSubMatrix(KNS_full,ptr_i->is_xi,ptr_i->is_xi,MAT_INITIAL_MATRIX ,&ptr_ms->KNS);
     MatGetSubMatrix(KLS_full,ptr_i->is_xi,ptr_i->is_xi,MAT_INITIAL_MATRIX ,&ptr_ms->KLS);
 
-
     VecGetSubVector(FS_full,ptr_i->is_xi,&FS_temp);
     VecCopy(FS_temp,ptr_ms->FS);
     VecRestoreSubVector(FS_full,ptr_i->is_xi,&FS_temp);
@@ -317,25 +317,36 @@ void compute_matricesNonlinearStructure_update(Matrices_S* ptr_ms, Index_S* ptr_
     MatDestroy(&KLS_full); MatDestroy(&KNS_full);
     VecDestroy(&FS_temp);  VecDestroy(&FS_full);
 
-    free_dmatrix( Dx.center_xx, 0,nx-1,0,ny-1);
-    free_dmatrix( Dx.vertex_xy, 0,nx-1,0,ny-1);
-    free_dmatrix( Dx.vertex_yx, 0,nx-1,0,ny-1);
-    free_dmatrix( Dx.center_yy, 0,nx-1,0,ny-1);
+    free_dmatrix( Dx.center_xx, ptr_u->dmx_s,ptr_u->dmx_e+1,ptr_u->dmy_s,ptr_u->dmy_e+1);
+    free_dmatrix( Dx.vertex_xy, ptr_u->dmx_s,ptr_u->dmx_e+1,ptr_u->dmy_s,ptr_u->dmy_e+1);
+    free_dmatrix( Dx.vertex_yx, ptr_u->dmx_s,ptr_u->dmx_e+1,ptr_u->dmy_s,ptr_u->dmy_e+1);
+    free_dmatrix( Dx.center_yy, ptr_u->dmx_s,ptr_u->dmx_e+1,ptr_u->dmy_s,ptr_u->dmy_e+1);
 
 }
 
-void compute_grad_update(struct Grad_Dist *ptr_dx, Field_S* ptr_f_old, Index_S* ptr_i, Grid_S* ptr_g)
+void compute_grad_update(struct Grad_Dist *ptr_dx, Field_S* ptr_f_old, Index_S* ptr_i, Grid_S* ptr_g, AppCtx* ptr_u)
 {
     int     i,j;
-    int     nx = ptr_g->Nx, ny = ptr_g->Ny,nn =ptr_g->N;
+    int     nx = ptr_g->Nx, ny = ptr_g->Ny,nn =(ptr_g->Nx+1)*(ptr_g->Ny+1);
     double  *xigrid_x, *xigrid_y;
     double  dx = ptr_g->dx;
-    PetscScalar *xi;
-
+    PetscScalar *xix, *xiy;
+    Vec		xix_local,xiy_local;
 
     xigrid_x = dvector(0,nn-1);
     xigrid_y = dvector(0,nn-1);
-    VecGetArray(ptr_f_old->xi,&xi);
+
+	VecCreateSeq(PETSC_COMM_SELF,ptr_i->xix_N +ptr_i->xix_ghoN,&xix_local);
+    VecCreateSeq(PETSC_COMM_SELF,ptr_i->xiy_N +ptr_i->xiy_ghoN,&xiy_local);
+
+    VecScatterBegin(ptr_u->scatter_x,ptr_f_old->xi,xix_local,INSERT_VALUES,SCATTER_FORWARD);
+    VecScatterEnd(ptr_u->scatter_x,ptr_f_old->xi,xix_local,INSERT_VALUES,SCATTER_FORWARD);
+
+    VecScatterBegin(ptr_u->scatter_y,ptr_f_old->xi,xiy_local,INSERT_VALUES,SCATTER_FORWARD);
+    VecScatterEnd(ptr_u->scatter_y,ptr_f_old->xi,xiy_local,INSERT_VALUES,SCATTER_FORWARD);
+
+    VecGetArray(xix_local,&xix);
+    VecGetArray(xiy_local,&xiy);
 
     for(i=0;i<nn;i++)
     {
@@ -343,14 +354,14 @@ void compute_grad_update(struct Grad_Dist *ptr_dx, Field_S* ptr_f_old, Index_S* 
         xigrid_y[i] =0.0;
     }
 
-    for(i=0;i<ptr_i->xix_N;i++)
-        xigrid_x[ptr_i->xix.l2G[i]]= xi[i];
+    for(i=0;i<ptr_i->xix_N +ptr_i->xix_ghoN ;i++)
+        xigrid_x[ptr_i->xix.l2G[i]]= xix[i];
 
-    for(i=0;i<ptr_i->xiy_N;i++)
-        xigrid_y[ptr_i->xiy.l2G[i]]= xi[i+ptr_i->xix_N];
+    for(i=0;i<ptr_i->xiy_N +ptr_i->xiy_ghoN;i++)
+        xigrid_y[ptr_i->xiy.l2G[i]]= xiy[i];
 
-    for(i=0;i<nx-1;i++)
-        for(j=0;j<ny-1;j++)
+    for(i=ptr_u->dmx_s;i<=ptr_u->dmx_e+1;i++)
+        for(j=ptr_u->dmy_s;j<=ptr_u->dmy_e+1;j++)
         {
             ptr_dx->center_xx[i][j]=(xigrid_x[i+1+j*nx]-xigrid_x[i+j*nx])/dx;
             ptr_dx->center_yy[i][j]=(xigrid_y[i+(j+1)*nx]-xigrid_y[i+j*nx])/dx;
@@ -362,9 +373,31 @@ void compute_grad_update(struct Grad_Dist *ptr_dx, Field_S* ptr_f_old, Index_S* 
             else      ptr_dx->vertex_xy[i][j] =(xigrid_x[i+j*nx]-xigrid_x[i+(j-1)*nx])/dx;
 
         }
+    /*
+    if (ptr_u->rank == 0)
+    {
+    		for(i=ptr_u->dmx_s;i<=ptr_u->dmx_e;i++)
+     		{
+    			for(j=ptr_u->dmy_s;j<=ptr_u->dmy_e;j++)
+     				printf("%f \t",ptr_dx->center_xx[i][j]);
+     			printf("\n");
+     		}
+     		printf("\n");
+     		for(i=ptr_u->dmx_s;i<=ptr_u->dmx_e;i++)
+     		{
+     			for(j=ptr_u->dmy_s;j<=ptr_u->dmy_e;j++)
+     				printf("%f \t",ptr_dx->center_yy[i][j]);
+     			printf("\n");
+     		}
+    }
+	*/
     free_dvector( xigrid_x, 0,nn-1);
     free_dvector( xigrid_y, 0,nn-1);
-    VecRestoreArray(ptr_f_old->xi,&xi);
+
+    VecRestoreArray(xix_local,&xix);
+    VecRestoreArray(xiy_local,&xiy);
+    VecDestroy(&xix_local);
+    VecDestroy(&xiy_local);
 
 }
 

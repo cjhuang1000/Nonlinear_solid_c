@@ -7,13 +7,11 @@ void set_initial(Index_S* ptr_i, Solid* ptr_s, Field_S* ptr_fs)
 
     int       i,j;
     PetscInt  n;
-    
-    n = ptr_i->xix_N + ptr_i->xiy_N;
 
     // initialize field_s
-    VecCreate(PETSC_COMM_SELF,&ptr_fs->xi);
-    VecSetSizes(ptr_fs->xi,n,PETSC_DECIDE);
-    VecSetType(ptr_fs->xi,"seq");
+    VecCreate(PETSC_COMM_WORLD,&ptr_fs->xi);
+    VecSetSizes(ptr_fs->xi,ptr_i->xix_N + ptr_i->xiy_N,ptr_i->xi_gloN);
+    VecSetFromOptions(ptr_fs->xi);
 
     VecDuplicate(ptr_fs->xi,&ptr_fs->dxi);
     VecDuplicate(ptr_fs->xi,&ptr_fs->ddxi);

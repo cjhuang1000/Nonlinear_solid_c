@@ -119,8 +119,13 @@ void set_index(Index_S* ind, Grid_S* g, AppCtx* ptr_u, int **bs, char *fsineuman
 						{
 							if (ptr_u->v2p[involved.stagx_cell[k]] == ptr_u->rank)
 								cell_involved_fsi_x[involved.stagx_cell[k]] =1;
+							else if (ptr_u->v2p[kk] == ptr_u->rank) // if the cell belongs to the next processor
+								cell_involved_fsi_x[involved.stagx_cell[k]] =2;
+
 							if (ptr_u->v2p[involved.stagy_cell[k]] == ptr_u->rank)
 								cell_involved_fsi_y[involved.stagy_cell[k]] =1;
+							else if (ptr_u->v2p[kk] == ptr_u->rank)
+								cell_involved_fsi_y[involved.stagy_cell[k]] =2;
 						}
 						break;
 					case 'N':
@@ -135,8 +140,13 @@ void set_index(Index_S* ind, Grid_S* g, AppCtx* ptr_u, int **bs, char *fsineuman
 						{
 							if (ptr_u->v2p[involved.stagx_cell[k]] == ptr_u->rank)
 								cell_involved_neu_x[involved.stagx_cell[k]] =1;
+							else if (ptr_u->v2p[kk] == ptr_u->rank)
+								cell_involved_neu_x[involved.stagx_cell[k]] =2;
+
 							if (ptr_u->v2p[involved.stagy_cell[k]] == ptr_u->rank)
 								cell_involved_neu_y[involved.stagy_cell[k]] =1;
+							else if (ptr_u->v2p[kk] == ptr_u->rank)
+								cell_involved_neu_y[involved.stagy_cell[k]] =2;
 						}
 						break;
 					case 'D':
@@ -151,8 +161,13 @@ void set_index(Index_S* ind, Grid_S* g, AppCtx* ptr_u, int **bs, char *fsineuman
 						{
 							if (ptr_u->v2p[involved.stagx_cell[k]] == ptr_u->rank)
 								cell_involved_dir_x[involved.stagx_cell[k]] =1;
+							else if (ptr_u->v2p[kk] == ptr_u->rank)
+								cell_involved_dir_x[involved.stagx_cell[k]] =2;
+
 							if (ptr_u->v2p[involved.stagy_cell[k]] == ptr_u->rank)
 								cell_involved_dir_y[involved.stagy_cell[k]] =1;
+							else if (ptr_u->v2p[kk] == ptr_u->rank)
+								cell_involved_dir_y[involved.stagy_cell[k]] =2;
 						}
 						break;
 
@@ -354,7 +369,9 @@ void set_index(Index_S* ind, Grid_S* g, AppCtx* ptr_u, int **bs, char *fsineuman
 	//printf("processor %d shows %d\n", ptr_u->rank, ind->xix_gloN);
 	// for fsi (to be done)
 
-	// part IV: Ghost cells of xix and xiy
+	// part IV: Ghost cells
+	// xix and xiy: append ghost cells at the end of l2G and l2g
+
 	n_xix = 0; n_xiy = 0;
 
 	PetscMalloc1(ind->xix_N, &pordering_x);
@@ -404,6 +421,96 @@ void set_index(Index_S* ind, Grid_S* g, AppCtx* ptr_u, int **bs, char *fsineuman
 		}
 	}
 
+	PetscFree(pordering_x);  PetscFree(aordering_x); PetscFree(pordering_y); PetscFree(aordering_y);
+	AODestroy(&ao_x);
+	AODestroy(&ao_y);
+
+
+
+	// boundary cells - Neumann: do not need to append the ghost cells, only update the C2c
+
+	PetscMalloc1(ind->xix_Ncell_Neumann, &pordering_x);
+	PetscMalloc1(ind->xix_Ncell_Neumann, &aordering_x);
+	PetscMalloc1(ind->xiy_Ncell_Neumann, &pordering_y);
+	PetscMalloc1(ind->xiy_Ncell_Neumann, &aordering_y);
+
+	for(i=0; i<ind->xix_Ncell_Neumann; i++)
+	{
+		pordering_x[i] = ind->xix.C2c_neumann[ind->xix.c2C_neumann[i]];
+		aordering_x[i] = ind->xix.c2C_neumann[i];
+	}
+
+	for(i=0; i<ind->xiy_Ncell_Neumann; i++)
+	{
+		pordering_y[i] = ind->xiy.C2c_neumann[ind->xiy.c2C_neumann[i]];
+		aordering_y[i] = ind->xiy.c2C_neumann[i];
+	}
+
+	AOCreateMapping(MPI_COMM_WORLD,ind->xix_Ncell_Neumann,aordering_x,pordering_x,&ao_x);
+	AOCreateMapping(MPI_COMM_WORLD,ind->xiy_Ncell_Neumann,aordering_y,pordering_y,&ao_y);
+
+	for(i=0; i<N; i++)
+	{
+		if (cell_involved_neu_x[i]==2)
+		{
+			temp2 = i;
+			AOApplicationToPetsc(ao_x,1,&temp2);
+			ind->xix.C2c_neumann[i] =(short int) temp2;
+		}
+		if (cell_involved_neu_y[i]==2)
+		{
+			temp2 = i;
+			AOApplicationToPetsc(ao_y,1,&temp2);
+			ind->xiy.C2c_neumann[i] =(short int) temp2;
+		}
+	}
+	PetscFree(pordering_x);  PetscFree(aordering_x); PetscFree(pordering_y); PetscFree(aordering_y);
+	AODestroy(&ao_x);
+	AODestroy(&ao_y);
+
+
+
+	// boundary cells - Dirichlet: do not need to append the ghost cells, only update the C2c
+
+	PetscMalloc1(ind->xix_Ncell_Dirichlet, &pordering_x);
+	PetscMalloc1(ind->xix_Ncell_Dirichlet, &aordering_x);
+	PetscMalloc1(ind->xiy_Ncell_Dirichlet, &pordering_y);
+	PetscMalloc1(ind->xiy_Ncell_Dirichlet, &aordering_y);
+
+	for(i=0; i<ind->xix_Ncell_Dirichlet; i++)
+	{
+		pordering_x[i] = ind->xix.C2c_dirichlet[ind->xix.c2C_dirichlet[i]];
+		aordering_x[i] = ind->xix.c2C_dirichlet[i];
+	}
+
+	for(i=0; i<ind->xiy_Ncell_Dirichlet; i++)
+	{
+		pordering_y[i] = ind->xiy.C2c_dirichlet[ind->xiy.c2C_dirichlet[i]];
+		aordering_y[i] = ind->xiy.c2C_dirichlet[i];
+	}
+
+	AOCreateMapping(MPI_COMM_WORLD,ind->xix_Ncell_Dirichlet,aordering_x,pordering_x,&ao_x);
+	AOCreateMapping(MPI_COMM_WORLD,ind->xiy_Ncell_Dirichlet,aordering_y,pordering_y,&ao_y);
+
+	for(i=0; i<N; i++)
+	{
+		if (cell_involved_dir_x[i]==2)
+		{
+			temp2 = i;
+			AOApplicationToPetsc(ao_x,1,&temp2);
+			ind->xix.C2c_dirichlet[i] =(short int) temp2;
+		}
+		if (cell_involved_dir_y[i]==2)
+		{
+			temp2 = i;
+			AOApplicationToPetsc(ao_y,1,&temp2);
+			ind->xiy.C2c_dirichlet[i] =(short int) temp2;
+		}
+	}
+	PetscFree(pordering_x);  PetscFree(aordering_x); PetscFree(pordering_y); PetscFree(aordering_y);
+	AODestroy(&ao_x);
+	AODestroy(&ao_y);
+
 	// output
 	/*
 	if (ptr_u->rank == 0)
@@ -420,25 +527,29 @@ void set_index(Index_S* ind, Grid_S* g, AppCtx* ptr_u, int **bs, char *fsineuman
 			printf("\n");
 		}
 
-	if (ptr_u->rank == 0)
+	if (ptr_u->rank == 1)
 	{
 		for(i = 0; i<g->Nx; i++)
 		{
 			for(j = 0; j<g->Ny; j++)
-				printf("%d \t",ind->xix.G2g[i+j*m]);
+				printf("%d \t",ind->xix.C2c_neumann[i+j*m]);
 			printf("\n");
 		}
 		printf("\n");
 		for(i = 0; i<g->Nx; i++)
 		{
 			for(j = 0; j<g->Ny; j++)
-				printf("%d \t",ind->xiy.G2g[i+j*m]);
+				printf("%d \t",ind->xiy.C2c_neumann[i+j*m]);
 			printf("\n");
 		}
 	}
 	*/
-	AODestroy(&ao_x);
-	AODestroy(&ao_y);
+	free(cell_int);		free(cell_bnd);  free(cell_fsi); free(cell_neu);  free(cell_dir);
+	free(xix_involved);	free(xiy_involved);
+	free(cell_involved_fsi_x);	free(cell_involved_fsi_y);
+	free(cell_involved_neu_x);	free(cell_involved_neu_y);
+	free(cell_involved_dir_x);	free(cell_involved_dir_y);
+
 
 }
 
@@ -496,7 +607,7 @@ int sumarray (int* a,int target, int n){
 
 	for(i=0; i<n; i++)
 		if (a[i] == target)
-			sum += a[i];
+			sum ++;
 
 	return sum;
 }

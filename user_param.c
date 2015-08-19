@@ -138,7 +138,7 @@ void set_solid(Solid* s, Grid_S* g){
 
 		center_x = 0.0;
 		center_y = 0.0;
-		r = 0.5;
+		r = 0.4;
 
 		for(i=0;i<m;i++)
 			for(j=0;j<n;j++)

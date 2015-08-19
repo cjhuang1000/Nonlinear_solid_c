@@ -17,6 +17,11 @@ typedef struct
 	short int *C2c_dirichlet,*c2C_dirichlet;
     short int *keep;
 
+    // Gx,Gy: global index on structured grid
+    // g: global index of the involved grid with new order
+    //    x1->y1->x2->y2->... where the number denotes the
+    //    processor where the node is on.
+    // l: local index
 } Index_xixy;
 
 typedef struct {
@@ -164,7 +169,7 @@ typedef struct {
 typedef struct {
 
 	PetscInt    *v2p;  // processor number for a vertex
-	VecScatter  scatter;
+	VecScatter  scatter_x, scatter_y;
 	AO			ao;
 	PetscMPIInt	rank,size;
 	int 		dmx_s, dmy_s, dmx_e, dmy_e;
