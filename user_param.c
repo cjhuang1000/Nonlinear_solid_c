@@ -14,7 +14,7 @@ void set_processor(Grid_S* ptr_g, AppCtx* ptr_u);
 void user_param (Grid_S* ptr_g, Solid* ptr_s, TimeMarching* ptr_t,Constraint_S* ptr_c, AppCtx* ptr_u)
 {
 
-	int		solid_resolution	= 5;
+	int		solid_resolution	= 11;
 	double	domain[4]			={-1.0,1.0,-1.0,1.0};
 	double  char_length			=1.0-1e-15;
 

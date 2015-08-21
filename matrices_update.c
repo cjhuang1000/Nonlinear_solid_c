@@ -373,24 +373,25 @@ void compute_grad_update(struct Grad_Dist *ptr_dx, Field_S* ptr_f_old, Index_S* 
             else      ptr_dx->vertex_xy[i][j] =(xigrid_x[i+j*nx]-xigrid_x[i+(j-1)*nx])/dx;
 
         }
+    // still have problem here...dmx_e and dmy_e might be grid.Nx and grid.Ny
     /*
     if (ptr_u->rank == 0)
     {
-    		for(i=ptr_u->dmx_s;i<=ptr_u->dmx_e;i++)
+    		for(i=0;i<nx;i++)
      		{
-    			for(j=ptr_u->dmy_s;j<=ptr_u->dmy_e;j++)
-     				printf("%f \t",ptr_dx->center_xx[i][j]);
+    			for(j=0;j<ny;j++)
+     				printf("%e \t",xigrid_x[i+nx*j]);
      			printf("\n");
      		}
      		printf("\n");
-     		for(i=ptr_u->dmx_s;i<=ptr_u->dmx_e;i++)
+     		for(i=0;i<nx;i++)
      		{
-     			for(j=ptr_u->dmy_s;j<=ptr_u->dmy_e;j++)
-     				printf("%f \t",ptr_dx->center_yy[i][j]);
+     			for(j=0;j<ny;j++)
+     				printf("%e \t",xigrid_y[i+nx*j]);
      			printf("\n");
      		}
-    }
-	*/
+    }*/
+
     free_dvector( xigrid_x, 0,nn-1);
     free_dvector( xigrid_y, 0,nn-1);
 

@@ -420,6 +420,7 @@ void compute_matricesNonlinearStructure(Matrices_S* ptr_ms, Index_S* ptr_i, Grid
     MatAssemblyEnd(DS_full,MAT_FINAL_ASSEMBLY);
 
     //Reduce system
+    /*
     if ((ptr_i->xix_N + ptr_i->xiy_N) == 18)
         {
         		for(i=0;i<ptr_g->Nx;i++)
@@ -437,7 +438,9 @@ void compute_matricesNonlinearStructure(Matrices_S* ptr_ms, Index_S* ptr_i, Grid
          		}
          		printf(" --- \n");
         }
+        */
     reduce_system(ptr_g,ptr_i,&MS_full,&KLS_full,&NS_full,&DS_full);
+    /*
     if ((ptr_i->xix_N_before + ptr_i->xiy_N_before) == 18)
         {
         		for(i=0;i<ptr_g->Nx;i++)
@@ -455,6 +458,7 @@ void compute_matricesNonlinearStructure(Matrices_S* ptr_ms, Index_S* ptr_i, Grid
          		}
          		printf(" --- \n");
         }
+        */
     //Set the reduced governing matrices
     MatGetSubMatrix(MS_full,ptr_i->is_xi,ptr_i->is_xi,MAT_INITIAL_MATRIX,&ptr_ms->MS);
     MatGetSubMatrix(KLS_full,ptr_i->is_xi,ptr_i->is_xi,MAT_INITIAL_MATRIX,&ptr_ms->KLS);

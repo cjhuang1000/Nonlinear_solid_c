@@ -15,6 +15,7 @@ Peggy Huang
 #include <petscksp.h>
 #include <petscis.h>
 
+
 #include "Field_s.h"
 #include "user_param.h"
 #include "init_setting.h"
@@ -283,17 +284,16 @@ int main(int argc,char **argv)
 		ierr = KSPSolve(ksp,RHS,x); CHKERRQ(ierr);
 
 		// check ###############
-		Vec checkvec;
-		VecDuplicate(RHS,&checkvec);
-		c = -1.0;
-		MatMult(A,x,checkvec);
-		VecAXPY(checkvec,c,RHS);
-		VecNestGetSubVec(checkvec,0,&tempvec2);
-		VecView(tempvec2,PETSC_VIEWER_STDOUT_WORLD);
+		//Vec checkvec;
+		//VecDuplicate(RHS,&checkvec);
+		//c = -1.0;
+		//MatMult(A,x,checkvec);
+		//VecAXPY(checkvec,c,RHS);
+		//VecNestGetSubVec(checkvec,0,&tempvec2);
+		//VecView(tempvec2,PETSC_VIEWER_STDOUT_WORLD);
 		// #####################
-		/*
+
 		VecNestGetSubVec(x,0,&tempvec2);
-		MatView(subA[0],PETSC_VIEWER_STDOUT_WORLD);
 		VecCopy(tempvec2,field_s.inc_dxi);
 
 		//update
@@ -320,8 +320,8 @@ int main(int argc,char **argv)
 		// while loop
 		while ( (residue1/residue0) > solid.threshold)
 		{
-			printf("looping\n");
-			compute_matricesNonlinearStructure_update(&mat_s, &ind, &grid, &solid, &user, &field_s_old);
+			//printf("looping\n");
+			compute_matricesNonlinearStructure_update(&mat_s, &ind, &grid, &solid, &user, &field_s_k);
 
 			// Governing matrix A
 			MatCopy(mat_s.MS,subA[0],DIFFERENT_NONZERO_PATTERN); CHKERRQ(ierr);
@@ -410,14 +410,17 @@ int main(int argc,char **argv)
 
 			fieldCopy(&field_s,&field_s_k);
 
-			//if (user.rank == 0)
-			//	printf("residue1 ratio: %e %e %e\n", residue1,residue0,residue1/residue0);
+			if (user.rank == 0)
+				printf("residue1 ratio: %e %e %e\n", residue1,residue0,residue1/residue0);
 			//residue1 = residue0*0.00001;
 
-	}*/
+	}
 	// output
 	//if(step%timem.nstep_output == 0)
-	//VecView(field_s.xi,PETSC_VIEWER_STDOUT_WORLD); // --------------
+	//MatView(mat_s.KLS,PETSC_VIEWER_STDOUT_WORLD); // --------------
+	//PetscObjectSetName((PetscObject)field_s.xi,"xi");
+	//VecView(field_s.xi,PETSC_VIEWER_MATLAB_WORLD);
+	VecView(field_s.xi,PETSC_VIEWER_STDOUT_WORLD); // --------------
 	fieldCopy(&field_s,&field_s_old);
     }
 
