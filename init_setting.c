@@ -511,45 +511,11 @@ void set_index(Index_S* ind, Grid_S* g, AppCtx* ptr_u, int **bs, char *fsineuman
 	AODestroy(&ao_x);
 	AODestroy(&ao_y);
 
-	// output
-	/*
-	if (ptr_u->rank == 0)
-		{
-			for(i = 0; i<ind->xix_N; i++)
-			{
-				printf("%d \t",ind->xix.l2G[i]);
-			}
-			printf("\n");
-			for(i = 0; i<ind->xiy_N; i++)
-			{
-				printf("%d \t",ind->xiy.l2G[i]);
-			}
-			printf("\n");
-		}
-
-	if (ptr_u->rank == 1)
-	{
-		for(i = 0; i<g->Nx; i++)
-		{
-			for(j = 0; j<g->Ny; j++)
-				printf("%d \t",ind->xix.C2c_neumann[i+j*m]);
-			printf("\n");
-		}
-		printf("\n");
-		for(i = 0; i<g->Nx; i++)
-		{
-			for(j = 0; j<g->Ny; j++)
-				printf("%d \t",ind->xiy.C2c_neumann[i+j*m]);
-			printf("\n");
-		}
-	}
-	*/
 	free(cell_int);		free(cell_bnd);  free(cell_fsi); free(cell_neu);  free(cell_dir);
 	free(xix_involved);	free(xiy_involved);
 	free(cell_involved_fsi_x);	free(cell_involved_fsi_y);
 	free(cell_involved_neu_x);	free(cell_involved_neu_y);
 	free(cell_involved_dir_x);	free(cell_involved_dir_y);
-
 
 }
 

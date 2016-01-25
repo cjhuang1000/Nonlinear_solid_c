@@ -25,6 +25,12 @@ void set_initial(Index_S* ptr_i, Solid* ptr_s, Field_S* ptr_fs)
         VecZeroEntries(ptr_fs->ddxi);
     }
 
+    if (strcmp(ptr_s->initial,"specified")==0)
+    {
+        VecSet(ptr_fs->xi,0.03);
+        VecSet(ptr_fs->dxi,0.0);
+        VecSet(ptr_fs->ddxi,0.0);
+    }
     VecZeroEntries(ptr_fs->inc_dxi);
 
     VecAssemblyBegin(ptr_fs->xi);
@@ -35,5 +41,11 @@ void set_initial(Index_S* ptr_i, Solid* ptr_s, Field_S* ptr_fs)
     VecAssemblyEnd(ptr_fs->ddxi);
     VecAssemblyBegin(ptr_fs->inc_dxi);
     VecAssemblyEnd(ptr_fs->inc_dxi);
+
+    VecCreate(PETSC_COMM_WORLD,&ptr_fs->traction);
+    VecSetSizes(ptr_fs->traction,ptr_i->xix_Ncell_Neumann + ptr_i->xiy_Ncell_Neumann,ptr_i->xi_gloNcell_Neumann);
+    VecSetFromOptions(ptr_fs->traction);
+
+    VecSet(ptr_fs->traction,0.0);
 
 }

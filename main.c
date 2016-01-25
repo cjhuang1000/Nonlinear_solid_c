@@ -21,6 +21,8 @@ Peggy Huang
 #include "init_setting.h"
 #include "boun_func.h"
 #include "init_cond.h"
+#include "interface_marker.h"
+#include "fluid.h"
 
 static char help[] = "Nonlinear solid solver.\n\n";
 
@@ -57,17 +59,8 @@ void setScattering(AppCtx* ptr_u, Index_S* ptr_i,Vec f)
     ISCreateGeneral(PETSC_COMM_SELF,nx,l2g_x,PETSC_OWN_POINTER,&is_xix);
     ISCreateGeneral(PETSC_COMM_SELF,ny,l2g_y,PETSC_OWN_POINTER,&is_xiy);
 
-    //if (ptr_u->rank == 1)
-    //{
-    //	ISView(is_xix,PETSC_VIEWER_STDOUT_SELF);
-    //	ISView(is_xiy,PETSC_VIEWER_STDOUT_SELF);
-    //}
-
     VecScatterCreate(f,is_xix,local_x,NULL,&ptr_u->scatter_x);
     VecScatterCreate(f,is_xiy,local_y,NULL,&ptr_u->scatter_y);
-
-    //VecScatterView(ptr_u->scatter_x,PETSC_VIEWER_STDOUT_WORLD);
-    //VecScatterView(ptr_u->scatter_y,PETSC_VIEWER_STDOUT_WORLD);
 
     VecDestroy(&local_x); VecDestroy(&local_y);
     ISDestroy(&is_xix);  ISDestroy(&is_xiy);
@@ -88,8 +81,10 @@ int main(int argc,char **argv)
     Index_S	    	ind;
     Constraint_S    const_s;
     Field_S         field_s,field_s_old,field_s_k;
+    Field_F			fluid;
     Matrices_S      mat_s;
     AppCtx          user;
+    Lag_marker      marker0,marker;  	// marker0 represent
 
     Mat				A,subA[4];
     Vec				RHS,subRHS[2], tempvec, tempvec2,x,subx[2];
@@ -100,6 +95,7 @@ int main(int argc,char **argv)
     PetscScalar  	c,c1;
 
     PetscInt        mm,nn;
+    PetscScalar 	shift;
 
     // =============== Setting up PETSC =================
 
@@ -109,26 +105,22 @@ int main(int argc,char **argv)
 
     // =============== Parameter setting ================
 
+    // set simulation parameters
     user_param(&grid,&solid,&timem,&const_s,&user);
 
-    //for(i = 0; i<grid.Nx; i++)
-    //{
-    //	for(j = 0; j<grid.Ny; j++)
-    //		printf("%f \t",solid.boundary_value[i][j]);
-    //	printf("\n");
-    //}
+    // set fluid parameters
+    fluid_setup(&fluid, &grid, &solid);
 
+    // set indices
     set_index(&ind,&grid,&user,solid.boundary_sign,const_s.fsineumanndirichlet);
+
+    // initialize boundary function
     set_boundfunc(grid.dx);
 
     // =============== Constructing governing matrices and vectors ================
 
+    // construct the governing matrices
     compute_matricesNonlinearStructure(&mat_s, &ind, &grid, &solid, const_s.fsineumanndirichlet);
-    //MatView(mat_s.KLS,PETSC_VIEWER_STDOUT_WORLD ); // --------------
-
-    //MatView(mat_s.MS,PETSC_VIEWER_STDOUT_WORLD);
-    //MatView(mat_s.KLS,PETSC_VIEWER_STDOUT_WORLD);
-    //MatView(mat_s.DS,PETSC_VIEWER_STDOUT_WORLD);
 
     n = ind.xix_N + ind.xiy_N;
     VecCreate(PETSC_COMM_WORLD,&mat_s.FS);
@@ -194,10 +186,25 @@ int main(int argc,char **argv)
 
     fieldCopy(&field_s,&field_s_old);
 
+    // set up interface markers
+
+    marker_setup(&grid, &solid, &ind, &marker, &user); // should be after reduce_system
+    displacement_interpolation(&marker, &ind, &grid );
+
     // ================ Setting Scattering ==========================
 
     setScattering(&user, &ind, field_s.xi);
 
+    build_current_marker(&marker, &field_s, &ind, &user);
+	update_sdf (&grid, &marker, &user, &fluid);
+
+	ib_find_forcing_pts_2d (&fluid, &marker);
+
+	apply_forcing_2d(&fluid, 1.0);
+	printf("works!");
+	force_calculation(&ind, &fluid, &field_s, &marker);
+
+	/*
     // ================ Time marching ===============================
 
     // Setup vec and mat
@@ -274,7 +281,7 @@ int main(int argc,char **argv)
 	    KSPCreate(PETSC_COMM_WORLD,&ksp);
 	    KSPSetType(ksp, KSPGMRES);
 		KSPSetOperators(ksp,A,A);
-		KSPSetTolerances(ksp,PETSC_DEFAULT,1.e-16,PETSC_DEFAULT,PETSC_DEFAULT);
+		//KSPSetTolerances(ksp,PETSC_DEFAULT,1.e-20,PETSC_DEFAULT,PETSC_DEFAULT);
 		KSPSetFromOptions(ksp);
 		KSPGetPC(ksp,&pc);
 		PCFieldSplitSetIS(pc,"0",isg[0]);
@@ -423,6 +430,7 @@ int main(int argc,char **argv)
 	VecView(field_s.xi,PETSC_VIEWER_STDOUT_WORLD); // --------------
 	fieldCopy(&field_s,&field_s_old);
     }
+	*/
 
 	PetscFinalize();
     return 0;

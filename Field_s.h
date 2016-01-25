@@ -6,6 +6,7 @@
 #include <petscvec.h>
 #include <petscmat.h>
 #include <petscis.h>
+#include <petscdmda.h>
 
 typedef struct
 {
@@ -66,9 +67,19 @@ typedef struct {
     Vec dxi;
     Vec ddxi;
     Vec inc_dxi;
+	Vec traction;
 	
 } Field_S;
 
+// The index of the solid staggered grid is defined in the following manner
+//  +------------+
+//  |            |
+//  |            |
+// ---   i,j     |
+//  |            |
+//  |            |
+//  +------|-----+
+//
 
 typedef struct {
 
@@ -173,6 +184,7 @@ typedef struct {
 	AO			ao;
 	PetscMPIInt	rank,size;
 	int 		dmx_s, dmy_s, dmx_e, dmy_e;
+	DM			dmda;
 
 }AppCtx;
 

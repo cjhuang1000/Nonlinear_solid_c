@@ -48,10 +48,6 @@ boundfunc_cell  boundfunc_subcell0
         {{1,3,0,-1,-3,0},{-1,-3,0,1,3,0},{3,9,0,-3,-9,0},{-3,-9,0,3,9,0},{0,0,0,0,0,0},{0,0,0,0,0,0}},
         {{9,-9,0,3,-3,0},{3,-3,0,1,-1,0},{-9,9,0,-3,3,0},{-3,3,0,-1,1,0},{0,0,0,0,0,0},{0,0,0,0,0,0}},
         {{5,13,0,-5,-13,0},{1,5,0,-1,-5,0},{-5,-13,0,5,13,0},{-1,-5,0,1,5,0},{0,0,0,0,0,0},{0,0,0,0,0,0}},
-        //{{5,-5,13,-13,0,0},{-5,5,-13,13,0,0},{0,0,0,0,0,0},{1,-1,5,-5,0,0},{-1,1,-5,5,0,0},{0,0,0,0,0,0}},
-        //{{1,-1,3,-3,0,0},{3,-3,9,-9,0,0},{0,0,0,0,0,0},{-1,1,-3,3,0,0},{-3,3,-9,9,0,0},{0,0,0,0,0,0}},
-        //{{9,3,-9,-3,0,0},{-9,-3,9,3,0,0},{0,0,0,0,0,0},{3,1,-3,-1,0,0},{-3,-1,3,1,0,0},{0,0,0,0,0,0}},
-        //{{5,1,-5,-1,0,0},{13,5,-13,-5,0,0},{0,0,0,0,0,0},{-5,-1,5,1,0,0},{-13,-5,13,5,0,0},{0,0,0,0,0,0}},
         {{3,-3,9,-9,0,0},{1,-1,3,-3,0,0},{-3,3,-9,9,0,0},{-1,1,-3,3,0,0},{0,0,0,0,0,0},{0,0,0,0,0,0}},
         {{3,9,0,-3,-9,0},{-3,-9,0,3,9,0},{0,0,0,0,0,0},{1,3,0,-1,-3,0},{-1,-3,0,1,3,0},{0,0,0,0,0,0}},
         {-1, 1, -3, 3, 0, 0},
@@ -105,8 +101,6 @@ void compute_matricesNonlinearStructure_update(Matrices_S* ptr_ms, Index_S* ptr_
     mpl = ptr_s->mu + ptr_s->lambda;
     lambda = ptr_s->lambda;
     mu = ptr_s->mu;
-
-    // initialize the temporary matrices @@
 
     //compute gradient
 
@@ -219,7 +213,6 @@ void compute_matricesNonlinearStructure_update(Matrices_S* ptr_ms, Index_S* ptr_
     // =========  for boundary cells =========== @@
 
     for(i=0;i<ptr_i->cell_N_boundary; i++)
-    //	for(i=0;i<1; i++)
     {
        cell_i = (int) ptr_i->cell_boundary[i];
 
@@ -229,7 +222,7 @@ void compute_matricesNonlinearStructure_update(Matrices_S* ptr_ms, Index_S* ptr_
        {
             index_xix[j] = ptr_i->xix.G2g_before[index_cell.xix[j]];
             index_xiy[j] = ptr_i->xiy.G2g_before[index_cell.xiy[j]];
-        }
+        }for(i=0;i<ptr_i->cell_N_boundary; i++)
 
        for(j=0;j<4;j++)
        {

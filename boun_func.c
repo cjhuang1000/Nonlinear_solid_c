@@ -22,10 +22,6 @@ boundfunc_cell boundfunc_Mcell0
     {{1,6,1,-1,-6,-1},{-1,-6,-1,1,6,1},{6,36,6,-6,-36,-6},{-6,-36,-6,6,36,6},{1,6,1,-1,-6,-1},{-1,-6,-1,1,6,1}},
     {{9,-6,-3,3,-2,-1},{3,6,-9,1,2,-3},{-6,4,2,6,-4,-2},{-2,-4,6,2,4,-6},{-3,2,1,-9,6,3},{-1,-2,3,-3,-6,9}},
     {{5,18,1,-5,-18,-1},{1,18,5,-1,-18,-5},{0,0,0,0,0,0},{0,0,0,0,0,0},{-5,-18,-1,5,18,1},{-1,-18,-5,1,18,5}},
-    //{{5,-5,18,-18,1,-1},{0,0,0,0,0,0},{-5,5,-18,18,-1,1},{1,-1,18,-18,5,-5},{0,0,0,0,0,0},{-1,1,-18,18,-5,5}},
-    //{{1,-1,6,-6,1,-1},{6,-6,36,-36,6,-6},{1,-1,6,-6,1,-1},{-1,1,-6,6,-1,1},{-6,6,-36,36,-6,6},{-1,1,-6,6,-1,1}},
-    //{{9,3,-6,-2,-3,-1},{-6,6,4,-4,2,-2},{-3,-9,2,6,1,3},{3,1,6,2,-9,-3},{-2,2,-4,4,6,-6},{-1,-3,-2,-6,3,9}},
-    //{{5,1,0,0,-5,-1},{18,18,0,0,-18,-18},{1,5,0,0,-1,-5},{-5,-1,0,0,5,1},{-18,-18,0,0,18,18},{-1,-5,0,0,1,5}},
     {{1,-1,3,-3,0,0},{1,-1,3,-3,0,0},{-1,1,0,0,1,-1},{-1,1,0,0,1,-1},{0,0,-3,3,-1,1},{0,0,-3,3,-1,1}},
     {{1,3,0,-1,-3,0},{-1,0,1,1,0,-1},{0,-3,-1,0,3,1},{1,3,0,-1,-3,0},{-1,0,1,1,0,-1},{0,-3,-1,0,3,1}},
     {-1, 1, -6, 6,-1, 1},
@@ -102,7 +98,6 @@ void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat
 void set_boundfunc(double ddx){
 
     int     i,j,subcell_k;
-    double temp1[6][6],temp2[6][6];
 
     dx = ddx;
     dx2 = ddx*ddx;
@@ -189,18 +184,7 @@ void set_boundfunc(double ddx){
             boudfunc_subcellint[subcell_k].FS_hyy[i] = boundfunc_subcell0.FS_hyy[boundfunc.sym[subcell_k].y[i]]* boundfunc.sym[subcell_k].signy ;
             boudfunc_subcellint[subcell_k].FS_hyx[i] = boundfunc_subcell0.FS_hyx[boundfunc.sym[subcell_k].y[i]]* boundfunc.sym[subcell_k].signx ;
         }
-        /*
-        for(i=0;i<6;i++)
-            for(j=0;j<6;j++){
-                temp1[i][j] = boudfunc_subcellint[subcell_k].KS_hxxhxy[j][i];
-                temp2[i][j] = boudfunc_subcellint[subcell_k].KS_hyyhyx[j][i];
-            }
 
-         for(i=0;i<6;i++)
-            for(j=0;j<6;j++){
-                boudfunc_subcellint[subcell_k].KS_hxxhxy[i][j] += temp1[i][j];
-                boudfunc_subcellint[subcell_k].KS_hyyhyx[i][j] += temp2[i][j];
-            }*/
         }
 
 }
@@ -420,45 +404,8 @@ void compute_matricesNonlinearStructure(Matrices_S* ptr_ms, Index_S* ptr_i, Grid
     MatAssemblyEnd(DS_full,MAT_FINAL_ASSEMBLY);
 
     //Reduce system
-    /*
-    if ((ptr_i->xix_N + ptr_i->xiy_N) == 18)
-        {
-        		for(i=0;i<ptr_g->Nx;i++)
-         		{
-        			for(j=0;j<ptr_g->Ny;j++)
-         				printf("%d \t",ptr_i->xix.C2c_dirichlet[i+ptr_g->Nx*j]);
-         			printf("\n");
-         		}
-         		printf("\n");
-         		for(i=0;i<ptr_g->Nx;i++)
-         		{
-         			for(j=0;j<ptr_g->Ny;j++)
-         				printf("%d \t",ptr_i->xiy.C2c_dirichlet[i+ptr_g->Nx*j]);
-         			printf("\n");
-         		}
-         		printf(" --- \n");
-        }
-        */
-    reduce_system(ptr_g,ptr_i,&MS_full,&KLS_full,&NS_full,&DS_full);
-    /*
-    if ((ptr_i->xix_N_before + ptr_i->xiy_N_before) == 18)
-        {
-        		for(i=0;i<ptr_g->Nx;i++)
-         		{
-        			for(j=0;j<ptr_g->Ny;j++)
-         				printf("%d \t",ptr_i->xix.C2c_dirichlet[i+ptr_g->Nx*j]);
-         			printf("\n");
-         		}
-         		printf("\n");
-         		for(i=0;i<ptr_g->Nx;i++)
-         		{
-         			for(j=0;j<ptr_g->Ny;j++)
-         				printf("%d \t",ptr_i->xiy.C2c_dirichlet[i+ptr_g->Nx*j]);
-         			printf("\n");
-         		}
-         		printf(" --- \n");
-        }
-        */
+     reduce_system(ptr_g,ptr_i,&MS_full,&KLS_full,&NS_full,&DS_full);
+
     //Set the reduced governing matrices
     MatGetSubMatrix(MS_full,ptr_i->is_xi,ptr_i->is_xi,MAT_INITIAL_MATRIX,&ptr_ms->MS);
     MatGetSubMatrix(KLS_full,ptr_i->is_xi,ptr_i->is_xi,MAT_INITIAL_MATRIX,&ptr_ms->KLS);
@@ -760,19 +707,19 @@ boundfunc_cell compute_matricesSubcell(double bound_value[4], char bd_type, int*
 
 struct boundfunc_edge compute_matricesEdge(double start_coord[2], double end_coord[2])
 {
-    struct boundfunc_edge  edge={0};
+    struct boundfunc_edge  edge = {0};
     double          alpha, beta,delta;
     int             i,j;
 
     alpha    = ( end_coord[0]-start_coord[0] ) / ( end_coord[1]-start_coord[1]);
 
-    if (abs(alpha) <= 1)
+    if (fabs(alpha) <= 1)
         beta  = start_coord[0] - alpha*start_coord[1];
     else
         delta = start_coord[1] - start_coord[0]/alpha;
 
     //Calculation using alpha-formula
-    if ( abs(alpha) <= 1)
+    if ( fabs(alpha) <= 1)
     {
         for(i=0;i<4;i++)
         {
@@ -854,7 +801,7 @@ struct boundfunc_edgeNS compute_matricesEdgeNS(double start_coord[2], double end
 
     alpha    = ( end_coord[0]-start_coord[0] ) / ( end_coord[1]-start_coord[1]);
         //Calculation using alpha-formula
-    if ( abs(alpha) <= 1)
+    if ( fabs(alpha) <= 1)
     {
         for(i=0;i<4;i++)
         {
