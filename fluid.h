@@ -53,6 +53,8 @@ typedef struct {
 
   /* index range for RHS's */
   int urhs[3][2], urhs_gbl[3][2],
+  // @@ Jan 2016 add 'shared', means the boundary and the processor between
+  // shared panels (which are the ghosted panel for neighboring processor)
       vrhs[3][2], vrhs_gbl[3][2],
       wrhs[3][2], wrhs_gbl[3][2],
       prhs[3][2], prhs_gbl[3][2];
@@ -62,6 +64,14 @@ typedef struct {
       v[3][2], v_gbl[3][2], v_raw[3][2],
       w[3][2], w_gbl[3][2], w_raw[3][2],
       p[3][2], p_gbl[3][2], p_raw[3][2];
+
+  int    shared_pro[6];
+  double shared_bound[6], int_bound[6];
+  // @@ Jan 2016 add 'shared', means the boundary and the processor between
+  // shared panels (which are the ghosted panel for neighboring processor)
+  // and the pure interior panels.
+  // four entries mean the value of the left, right, bottom, top, front and
+  // back sides of the subdomain
 
   /* index range for with ghost points */
   int u_ghost[3][2], u_raw_ghost[3][2];
@@ -108,9 +118,9 @@ typedef struct {
   int                tp[3];
   double              n[3];
   double           surf[3];
-  int				 panel; // added by Peggy Nov,1,2015
-  double			 ratio; // added by Peggy Nov,1,2015
-  double			 value; // boundary point property for traction calculation.
+  //int				 panel; // added by Peggy Nov,1,2015
+  //double			 ratio; // added by Peggy Nov,1,2015
+  //double			 value; // boundary point property for traction calculation.
   	  	  	  	  	  	  	// It is velocities for velocity forcing points, and acceleration for pressure forcing points.
 } forcing_point_t;
 
@@ -160,7 +170,7 @@ typedef struct {
   DM da2d5p; // for poisson solvers
   DM da3d7p;
 
-  //int Nx, Ny, Nz;
+  int Nx, Ny, Nz;
 
   /* number of control volumes */
   int ncv[3];
@@ -207,6 +217,7 @@ typedef struct {
 
   /* distance functions */
   Vec dist_u, dist_v, dist_w, dist_p;
+  Vec dist_map_u, dist_map_v, dist_map_w, dist_map_p; // map of forcing points (if 1, forcing point. If 0, solid or fluid point)
   Vec panel_u, panel_v, panel_w, panel_p; // added by Peggy Nov,1,2015
   Vec ratio_u, ratio_v, ratio_w, ratio_p; // added by Peggy Nov,1,2015
   /* forcing point lists */
@@ -233,6 +244,8 @@ void fluid_setup(Field_F* f, Grid_S* g, Solid* s);
 void index_range_get_raw(char which_var, Field_F *f,
                         int *i, int *j, int *k);
 void index_range_get_rhs(char which_var, Field_F *f,
+                        int *i, int *j, int *k);
+void index_range_get_raw_ghost(char which_var, Field_F *f,
                         int *i, int *j, int *k);
 //------------------------
 

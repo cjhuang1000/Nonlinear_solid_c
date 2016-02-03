@@ -32,7 +32,7 @@ void user_param (Grid_S* ptr_g, Solid* ptr_s, TimeMarching* ptr_t,Constraint_S* 
 	double	Newmark_theta		=1.0/4;
 	int		plot_per_steps		=1000;
 
-	char	initial[]			="rest"; // rest, specified
+	char	initial[]			="specified"; // rest, specified
 
 	int		i,j;
 

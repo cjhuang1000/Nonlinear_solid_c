@@ -11,14 +11,14 @@ static int index_range_set_rhs(char which_var, Field_F *f,
 void fluid_setup(Field_F* f, Grid_S* g, Solid* s)
 {
 
-	int  			s_width 	= 1;
+	int  			s_width 	= 2; // stencil width
 	int  			dof 		= 1;
 	int  			nx 			= (g->Nx-1)*2+1, ny = (g->Ny-1)*2+1;  // fluid grid size is half of solid grid size
 	int				i,rank;
 	const int 		start		= 0, end=1;
 
 	double 			dx			= g->dx/2;
-	double			domain[4]	={-1.0,1.0,-1.0,1.0};
+	double			domain[6]	={-1.0,1.0,-1.0,1.0, 0.0, 0.0};
 	DMDAStencilType s_type 		= DMDA_STENCIL_BOX;
 	DMBoundaryType  b_type 		= DM_BOUNDARY_NONE;
 
@@ -46,8 +46,14 @@ void fluid_setup(Field_F* f, Grid_S* g, Solid* s)
 	f->proc_coords[0] = rank % npx;
 	f->proc_coords[2] = rank / (npx * npy);
 	f->proc_coords[1] = (rank - npx*npy*f->proc_coords[2]) / npx;
+	f->dx = dx;
+
+	const int px = f->proc_coords[0];
+	const int py = f->proc_coords[1];
+	const int pz = f->proc_coords[2];
 
 	// ------------------ set up index ---------------
+
 	int n1,n2,n3,i0,j0,k0,idl[2], jdl[2], kdl[2];
 	DMDAGetCorners(f->da, &i0, &j0, &k0, &n1, &n2, &n3);
 
@@ -58,6 +64,63 @@ void fluid_setup(Field_F* f, Grid_S* g, Solid* s)
 	index_range_set_raw('u', f, idl, jdl, kdl);
 	index_range_set_raw('v', f, idl, jdl, kdl);
 	index_range_set_raw('p', f, idl, jdl, kdl);
+
+	f->idx_range.int_bound[0] = (idl[start])*f->dx + domain[0];
+	f->idx_range.int_bound[1] = (idl[end]+1)*f->dx + domain[0];
+	f->idx_range.int_bound[2] = (jdl[start])*f->dx + domain[2];
+	f->idx_range.int_bound[3] = (jdl[end]+1)*f->dx + domain[2];
+	f->idx_range.int_bound[4] = (kdl[start])*f->dx + domain[4];
+	f->idx_range.int_bound[5] = (kdl[end]+1)*f->dx + domain[4];
+
+	// @@ Jan 2016, for panel redistribution
+	idl[start] += 1;  idl[end] -= 1;
+	jdl[start] += 1;  jdl[end] -= 1;
+	kdl[start] += 1;  kdl[end] -= 1;
+	//idl[start] += s_width;  idl[end] -= s_width;
+	//jdl[start] += s_width;  jdl[end] -= s_width;
+	//kdl[start] += s_width;  kdl[end] -= s_width;
+
+	if (px == 0    ) idl[start] = 0;
+	if (px == npx-1) idl[end]   = NX-1;
+
+	if (py == 0    ) jdl[start] = 0;
+	if (py == npy-1) jdl[end]   = NY-1;
+
+	if (pz == 0    ) kdl[start] = 0;
+	if (pz == npz-1) kdl[end]   = NZ-1;
+
+	f->idx_range.shared_bound[0] = (idl[start])*f->dx + domain[0];
+	f->idx_range.shared_bound[1] = (idl[end]+1)*f->dx + domain[0];
+	f->idx_range.shared_bound[2] = (jdl[start])*f->dx + domain[2];
+	f->idx_range.shared_bound[3] = (jdl[end]+1)*f->dx + domain[2];
+	f->idx_range.shared_bound[4] = (kdl[start])*f->dx + domain[4];
+	f->idx_range.shared_bound[5] = (kdl[end]+1)*f->dx + domain[4];
+
+	// Neighboring processor's rank. If there is no neighboring -> -1.
+
+	// left
+	if (px == 0) 	 f->idx_range.shared_pro[0] = -1;
+	else 		 	 f->idx_range.shared_pro[0] = pz*npx*npy + py*npx + px -1;
+
+	// right
+	if (px == npx-1) f->idx_range.shared_pro[1] = -1;
+	else 		 	 f->idx_range.shared_pro[1] = pz*npx*npy + py*npx + px +1;
+
+	// bottom
+	if (py == 0) 	 f->idx_range.shared_pro[2] = -1;
+	else 		 	 f->idx_range.shared_pro[2] = pz*npx*npy + (py-1)*npx + px;
+
+	// top
+	if (py == npy-1) f->idx_range.shared_pro[3] = -1;
+	else 		 	 f->idx_range.shared_pro[3] = pz*npx*npy + (py+1)*npx + px;
+
+	// front and back (for 3D)
+	if (pz == 0) 	 f->idx_range.shared_pro[4] = -1;
+	else 		 	 f->idx_range.shared_pro[4] = (pz-1)*npx*npy + py*npx + px;
+
+	if (pz == npz-1) f->idx_range.shared_pro[5] = -1;
+	else 		 	 f->idx_range.shared_pro[5] = (pz+1)*npx*npy + py*npx + px;
+	// @@
 
 	int m1,m2,m3;
 
@@ -81,10 +144,6 @@ void fluid_setup(Field_F* f, Grid_S* g, Solid* s)
 	idl[start] = i0; idl[end] = i0+n1-1;
 	jdl[start] = j0; jdl[end] = j0+n2-1;
 	kdl[start] = k0; kdl[end] = k0+n3-1;
-
-	const int px = f->proc_coords[0];
-	const int py = f->proc_coords[1];
-	const int pz = f->proc_coords[2];
 
 	if (px == 0    ) idl[start] = 2;
 	if (px == npx-1) idl[end]   = NX-2;
@@ -144,8 +203,8 @@ void fluid_setup(Field_F* f, Grid_S* g, Solid* s)
 	DMCreateGlobalVector(f->da, &f->v    );
 	DMCreateGlobalVector(f->da, &f->p    );
 
-	VecSet(f->u ,0.1);
-	VecSet(f->v ,0.1);
+	VecSet(f->u ,0.05);
+	VecSet(f->v ,0.05);
 	VecSet(f->p ,0.0);
 
 	// --------------- Create global sdf vector layout
@@ -161,6 +220,9 @@ void fluid_setup(Field_F* f, Grid_S* g, Solid* s)
 	DMCreateGlobalVector(f->da, &f->ratio_v    );
 	DMCreateGlobalVector(f->da, &f->ratio_p    );
 
+	DMCreateGlobalVector(f->da, &f->dist_map_u     );
+	DMCreateGlobalVector(f->da, &f->dist_map_v     );
+	DMCreateGlobalVector(f->da, &f->dist_map_p     );
 
 	// set grid c
 	f->x_grid  = (double *) malloc(sizeof(double) * nx);
@@ -174,10 +236,16 @@ void fluid_setup(Field_F* f, Grid_S* g, Solid* s)
 	for(i=0; i<nx; i++)
 	{
 		f->x_grid[i]  = i*dx + domain[0];
-		f->y_grid[i]  = i*dx + domain[2];
 		f->xm_grid[i] = (i+0.5)*dx + domain[0];
+	}
+	for(i=0; i<ny; i++)
+	{
+		f->y_grid[i]  = i*dx + domain[2];
 		f->ym_grid[i] = (i+0.5)*dx + domain[2];
 	}
+
+	f->ncv[0]=nx;
+	f->ncv[1]=ny;
 
 	// initialize the sdf
 
@@ -195,6 +263,10 @@ void fluid_setup(Field_F* f, Grid_S* g, Solid* s)
 	DMDAVecRestoreArray(f->da,	f->dist_u,	&dist_u);
 	DMDAVecRestoreArray(f->da,	f->dist_v,	&dist_v);
 	DMDAVecRestoreArray(f->da,	f->dist_p,	&dist_p);
+
+	forcing_pts_list_init(&(f->flist_u));
+	forcing_pts_list_init(&(f->flist_v));
+	forcing_pts_list_init(&(f->flist_p));
 
 }
 
@@ -251,7 +323,6 @@ static int index_range_set_raw(char which_var, Field_F *f,
     } /* end of switch */
   return 0;
 }
-
 
 static int index_range_set_raw_ghost(char which_var, Field_F *f,
                                      const int *i, const int *j, const int *k)
@@ -349,6 +420,52 @@ void index_range_get_raw(char which_var, Field_F *f,
 
     } /* end of switch */
 }
+
+void index_range_get_raw_ghost(char which_var, Field_F *f,
+                        int *i, int *j, int *k)
+{
+  const int x=0, y=1, z=2;
+  int rank,s;
+
+  /* see also index_range_t in field.h */
+
+  switch (which_var)
+    {
+    case 'u':
+      for ( s=0; s<=1; s++) {
+        i[s] = f->idx_range.u_raw_ghost[x][s];
+        j[s] = f->idx_range.u_raw_ghost[y][s];
+        k[s] = f->idx_range.u_raw_ghost[z][s];
+      }
+      break;
+
+    case 'v':
+      for ( s=0; s<=1; s++) {
+        i[s] = f->idx_range.v_raw_ghost[x][s];
+        j[s] = f->idx_range.v_raw_ghost[y][s];
+        k[s] = f->idx_range.v_raw_ghost[z][s];
+      }
+      break;
+
+    case 'w':
+      for ( s=0; s<=1; s++) {
+        i[s] = f->idx_range.w_raw_ghost[x][s];
+        j[s] = f->idx_range.w_raw_ghost[y][s];
+        k[s] = f->idx_range.w_raw_ghost[z][s];
+      }
+      break;
+
+    case 'p':
+      for ( s=0; s<=1; s++) {
+        i[s] = f->idx_range.p_raw_ghost[x][s];
+        j[s] = f->idx_range.p_raw_ghost[y][s];
+        k[s] = f->idx_range.p_raw_ghost[z][s];
+      }
+      break;
+
+    } /* end of switch */
+}
+
 
 static int index_range_set_rhs(char which_var, Field_F *f,
                                const int *i, const int *j, const int *k)

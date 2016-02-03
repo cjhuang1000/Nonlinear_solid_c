@@ -41,8 +41,6 @@ const offset3d_t offset3d[26] =
 
 // ---------------------------
 
-
-static int forcing_pts_list_init(forcing_point_list_t *list);
 static int forcing_pts_list_addto(forcing_point_list_t *list,
                                   int i, int j, int k);
 
@@ -52,6 +50,9 @@ void marker_setup (Grid_S* ptr_g, Solid* ptr_s, Index_S* ptr_i,Lag_marker* ptr_m
 	double      sdf[9],x[9],y[9];
 	double		n[2],t[2];
 	int			index = 0, temp[4][4] = {{0,1,4,3},{1,2,5,4},{3,4,7,6},{4,5,8,7}};
+	Vec			tx_vec, ty_vec, l0_vec;
+	IS			is;
+	VecScatter	scatter;
 
 	struct bound_elem{
 		double sx,sy,ex,ey;
@@ -70,7 +71,6 @@ void marker_setup (Grid_S* ptr_g, Solid* ptr_s, Index_S* ptr_i,Lag_marker* ptr_m
 	int 		i,j,cell,subcell,ii,jj,cell_i;
 
 	PetscScalar *sx_array,*sy_array,*ex_array,*ey_array,*tx_array,*ty_array,*l0;
-	Vec			tx_vec, ty_vec,l0_parallel;
 
 	// ====== part I: Find intersection between interface and grid lines =======
 
@@ -247,11 +247,10 @@ void marker_setup (Grid_S* ptr_g, Solid* ptr_s, Index_S* ptr_i,Lag_marker* ptr_m
     VecDuplicate(ptr_mk->sp_x0, &ptr_mk->ep_y0);
     VecDuplicate(ptr_mk->sp_x0, &tx_vec);
     VecDuplicate(ptr_mk->sp_x0, &ty_vec);
-    VecDuplicate(ptr_mk->sp_x0, &l0_parallel);
+    VecDuplicate(ptr_mk->sp_x0, &l0_vec);
 
-    ptr_mk->tx 		= ivector(0, ptr_mk->nglobal-1);
-    ptr_mk->ty 		= ivector(0, ptr_mk->nglobal-1);
-    ptr_mk->lratio 	= dvector(0, ptr_mk->nglobal-1);
+    ptr_mk->nx 	= dvector(0, ptr_mk->nglobal-1);
+    ptr_mk->ny 	= dvector(0, ptr_mk->nglobal-1);
 
     // input the values in the Vec's
     VecGetArray(ptr_mk->sp_x0,&sx_array);
@@ -259,8 +258,8 @@ void marker_setup (Grid_S* ptr_g, Solid* ptr_s, Index_S* ptr_i,Lag_marker* ptr_m
     VecGetArray(ptr_mk->ep_x0,&ex_array);
     VecGetArray(ptr_mk->ep_y0,&ey_array);
     VecGetArray(tx_vec		 ,&tx_array);
-    VecGetArray(ty_vec		 ,&ty_array);
-    VecGetArray(l0_parallel	 ,&l0);
+    VecGetArray(ty_vec   	 ,&ty_array);
+    VecGetArray(l0_vec  	 ,&l0);
 
     for(i=0; i<ptr_mk->nlocal_s; i++)
     {
@@ -272,7 +271,6 @@ void marker_setup (Grid_S* ptr_g, Solid* ptr_s, Index_S* ptr_i,Lag_marker* ptr_m
     	ty_array[i]=ptr_i->xiy.C2c_neumann[lg_marker[i].ty];
     	l0[i] = sqrt((sx_array[i]-ex_array[i])*(sx_array[i]-ex_array[i])
     			+ (sy_array[i]-ey_array[i])*(sy_array[i]-ey_array[i]));
-    	printf("the %d panel is %d %f and %d %f \n",i, lg_marker[i].tx,tx_array[i],lg_marker[i].ty,ty_array[i]);
     }
 
     VecRestoreArray(ptr_mk->sp_x0,&sx_array);
@@ -281,81 +279,187 @@ void marker_setup (Grid_S* ptr_g, Solid* ptr_s, Index_S* ptr_i,Lag_marker* ptr_m
     VecRestoreArray(ptr_mk->ep_y0,&ey_array);
     VecRestoreArray(tx_vec		 ,&tx_array);
     VecRestoreArray(ty_vec		 ,&ty_array);
-    VecRestoreArray(l0_parallel	 ,&l0);
+    VecRestoreArray(l0_vec		 ,&l0);
 
-    // create sequential vec storing all the updated marker locations
-	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nglobal,&ptr_mk->sp_x);
-	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nglobal,&ptr_mk->sp_y);
-	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nglobal,&ptr_mk->ep_x);
-	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nglobal,&ptr_mk->ep_y);
-
-	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nglobal,&ptr_mk->sp_u);
-	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nglobal,&ptr_mk->sp_v);
-	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nglobal,&ptr_mk->ep_u);
-	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nglobal,&ptr_mk->ep_v);
-
-	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nglobal,&ptr_mk->sp_ax);
-	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nglobal,&ptr_mk->sp_ay);
-	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nglobal,&ptr_mk->ep_ax);
-	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nglobal,&ptr_mk->ep_ay);
-
-    IS 			is;
-    Vec			tx_vec_seq,ty_vec_seq;
+    VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nglobal,&ptr_mk->tx);
+    VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nglobal,&ptr_mk->ty);
+    VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nglobal,&ptr_mk->l0);
 
 	ISCreateStride	(PETSC_COMM_SELF,ptr_mk->nglobal,0,1,&is);
-	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nglobal,&tx_vec_seq);
-	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nglobal,&ty_vec_seq);
-	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nglobal,&ptr_mk->l0);
-	VecScatterCreate(ptr_mk->sp_x0,is,ptr_mk->sp_x,is,&ptr_mk->loc2all);
+	VecScatterCreate(ptr_mk->sp_x0,is,ptr_mk->tx,is,&scatter);
 
-	VecScatterBegin	(ptr_mk->loc2all,l0_parallel,ptr_mk->l0,INSERT_VALUES,SCATTER_FORWARD);
-	VecScatterEnd	(ptr_mk->loc2all,l0_parallel,ptr_mk->l0,INSERT_VALUES,SCATTER_FORWARD);
-
-	VecScatterBegin	(ptr_mk->loc2all,tx_vec,tx_vec_seq,INSERT_VALUES,SCATTER_FORWARD);
-	VecScatterEnd	(ptr_mk->loc2all,tx_vec,tx_vec_seq,INSERT_VALUES,SCATTER_FORWARD);
-	VecScatterBegin	(ptr_mk->loc2all,ty_vec,ty_vec_seq,INSERT_VALUES,SCATTER_FORWARD);
-	VecScatterEnd	(ptr_mk->loc2all,ty_vec,ty_vec_seq,INSERT_VALUES,SCATTER_FORWARD);
-
-	VecGetArray		(tx_vec_seq,&tx_array);
-    VecGetArray		(ty_vec_seq,&ty_array);
-
-    for(i=0; i<ptr_mk->nglobal; i++){
-    	ptr_mk->tx[i] = tx_array[i];
-    	ptr_mk->ty[i] = ty_array[i];
-    }
-
-    VecRestoreArray(tx_vec_seq,&tx_array);
-    VecRestoreArray(ty_vec_seq,&ty_array);
-
-    VecDestroy (&tx_vec_seq);
-    VecDestroy (&ty_vec_seq);
-    VecDestroy (&tx_vec);
-    VecDestroy (&ty_vec);
-    ISDestroy  (&is);
-
-    // prepare the list_f
-    ptr_mk->list_f 	= ivector(0, ptr_mk->nglobal-1);
-    ptr_mk->nx 		= dvector(0, ptr_mk->nglobal-1);
-    ptr_mk->ny 		= dvector(0, ptr_mk->nglobal-1);
+	VecScatterBegin	(scatter,tx_vec ,ptr_mk->tx,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterEnd	(scatter,tx_vec ,ptr_mk->tx,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterBegin	(scatter,ty_vec ,ptr_mk->ty,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterEnd	(scatter,ty_vec ,ptr_mk->ty,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterBegin	(scatter,l0_vec ,ptr_mk->l0,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterEnd	(scatter,l0_vec ,ptr_mk->l0,INSERT_VALUES,SCATTER_FORWARD);
 
     printf("Marker creation completed. \n");
     printf("The processor %d has %d markers. \n",ptr_u->rank,ptr_mk->nlocal_s);
 
+    ISDestroy (&is);
+    VecScatterDestroy(&scatter);
+    VecDestroy(&tx_vec);
+    VecDestroy(&ty_vec);
+    VecDestroy(&l0_vec);
 }
 
-// update the location of the current marker and build list
-void build_current_marker(Lag_marker* ptr_mk, Field_S* ptr_s, Index_S* ptr_i, AppCtx* ptr_u){
+
+// Given the distributed array of the location of the panels,
+// create the list of the indices of panel that are i
+
+void list_setup(Lag_marker* ptr_mk, Field_F* ptr_f){
+
+    IS 			is, is2;
+    Vec			sx0, sy0, ex0, ey0;
+    Vec			tx, ty;
+    int			*panel_int, *panel_gho;
+    VecScatter  all2loc;
+    PetscScalar *sx,*sy,*ex,*ey;
+    int 		panel, i0[2], j0[2], k0[2], i;
+    double		x_int[2], y_int[2], x_gho[2], y_gho[2], mp[2];
+    int 		bool1, bool2, bool3, bool4;
+
+    // get the limits of x- y- coordinates of the local processor
+    index_range_get_raw		 ('p', ptr_f, i0,  j0,  k0);
+	x_int[0] = i0[0]*ptr_f->dx + ptr_f->x_grid[0];
+	x_int[1] = (i0[1] + 1)*ptr_f->dx + ptr_f->x_grid[0];
+	y_int[0] = j0[0]*ptr_f->dx + ptr_f->y_grid[0];
+	y_int[1] = (j0[1] + 1)*ptr_f->dx + ptr_f->y_grid[0];
+
+    index_range_get_raw_ghost('p', ptr_f, i0,  j0,  k0);
+	x_gho[0] = i0[0]*ptr_f->dx + ptr_f->x_grid[0];
+	x_gho[1] = (i0[1] + 1)*ptr_f->dx + ptr_f->x_grid[0];
+	y_gho[0] = j0[0]*ptr_f->dx + ptr_f->y_grid[0];
+	y_gho[1] = (j0[1] + 1)*ptr_f->dx + ptr_f->y_grid[0];
+
+	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nglobal,&sx0);
+	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nglobal,&sy0);
+	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nglobal,&ex0);
+	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nglobal,&ey0);
+
+	ISCreateStride	(PETSC_COMM_SELF,ptr_mk->nglobal,0,1,&is);
+	VecScatterCreate(ptr_mk->sp_x0,is,sx0,is,&all2loc);
+
+	// Scatter all the panel location information to every processor
+	VecScatterBegin	(all2loc,ptr_mk->sp_x0,sx0,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterEnd	(all2loc,ptr_mk->sp_x0,sx0,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterBegin	(all2loc,ptr_mk->sp_y0,sy0,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterEnd	(all2loc,ptr_mk->sp_y0,sy0,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterBegin	(all2loc,ptr_mk->ep_x0,ex0,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterEnd	(all2loc,ptr_mk->ep_x0,ex0,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterBegin	(all2loc,ptr_mk->ep_y0,ey0,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterEnd	(all2loc,ptr_mk->ep_y0,ey0,INSERT_VALUES,SCATTER_FORWARD);
+
+	VecGetArray		(sx0,&sx);
+    VecGetArray		(sy0,&sy);
+	VecGetArray		(ex0,&ex);
+    VecGetArray		(ey0,&ey);
+
+    panel_int 	= ivector(0, ptr_mk->nglobal -1);
+    panel_gho 	= ivector(0, ptr_mk->nglobal -1);
+    ptr_mk->nlocal_f =0;
+    ptr_mk->nlocal_gho_f =0;
+
+    for(panel=0; panel<ptr_mk->nglobal; panel++)
+    {
+    	mp[0] = (sx[panel] + ex[panel])/2;
+    	mp[1] = (sy[panel] + ey[panel])/2;
+
+		bool1 = (sx[panel]<= x_gho[1]) && (sx[panel]> x_gho[0])
+				&& (sy[panel]<= y_gho[1]) && (sy[panel]> y_gho[0]);
+		bool2 = (ex[panel]<=x_gho[1]) && (ex[panel]> x_gho[0])
+				&& (ey[panel]<=y_gho[1]) && (ey[panel]> y_gho[0]);
+
+    	if ((mp[0]<= x_int[1]) && (mp[0]> x_int[0]) && (mp[1]<= y_int[1]) && (mp[1]> y_int[0])) // interior
+    	{
+
+    		panel_int[ptr_mk->nlocal_f] = panel;
+    		ptr_mk->nlocal_f ++;
+
+    	}
+    	else if (bool1==1 || bool2==1) // ghost points
+    	{
+    		panel_gho[ptr_mk->nlocal_gho_f] = panel;
+    		ptr_mk->nlocal_gho_f ++;
+    	}
+    }
+
+	VecRestoreArray(sx0,&sx);
+    VecRestoreArray(sy0,&sy);
+	VecRestoreArray(ex0,&ex);
+    VecRestoreArray(ey0,&ey);
+    ISDestroy  	(&is);
+
+    // prepare the list_f
+    ptr_mk->list_f 	= ivector(0, ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f -1);
+
+    for (i = 0; i < ptr_mk->nlocal_f; i++)
+    	ptr_mk->list_f[i] = panel_int[i];
+
+    for (i = 0; i < ptr_mk->nlocal_gho_f; i++)
+    	ptr_mk->list_f[ptr_mk->nlocal_f + i] = panel_gho[i];
+
+    // create VecScatter
+    VecCreateSeq   (PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ptr_mk->sp_x);
+    VecCreateSeq   (PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ptr_mk->sp_y);
+    VecCreateSeq   (PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ptr_mk->ep_x);
+    VecCreateSeq   (PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ptr_mk->ep_y);
+
+    VecCreateSeq   (PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ptr_mk->sp_u);
+    VecCreateSeq   (PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ptr_mk->sp_v);
+    VecCreateSeq   (PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ptr_mk->ep_u);
+    VecCreateSeq   (PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ptr_mk->ep_v);
+
+    VecCreateSeq   (PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ptr_mk->sp_ax);
+    VecCreateSeq   (PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ptr_mk->sp_ay);
+    VecCreateSeq   (PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ptr_mk->ep_ax);
+    VecCreateSeq   (PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ptr_mk->ep_ay);
+
+    ISCreateGeneral(PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,ptr_mk->list_f,PETSC_COPY_VALUES,&is2);
+	ISCreateStride (PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,0,1,&is);
+	VecScatterCreate(ptr_mk->sp_x0,is2,ptr_mk->sp_x,is,&ptr_mk->glo2loc);
+
+    printf("Marker list setup completed. \n");
+    printf("There are %d interior marker and %d ghosted markers\n",ptr_mk->nlocal_f,ptr_mk->nlocal_gho_f);
+
+    VecDestroy	(&sx0);
+    VecDestroy	(&sy0);
+    VecDestroy	(&ex0);
+    VecDestroy	(&ey0);
+    ISDestroy  	(&is);
+    ISDestroy  	(&is2);
+}
+
+// update the location of the current marker and update the list_f
+void build_current_marker(Lag_marker* ptr_mk, Field_S* ptr_s, Field_F* ptr_f, Index_S* ptr_i, AppCtx* ptr_u)
+{
 
 	PetscReal 	*xix,*xiy,*xi; // local displacement array
 	PetscReal	*sp_x,*sp_y,*ep_x,*ep_y,*l0;
 	PetscReal   *mkp;
 	PetscScalar	c = 1.0;
 	Vec		   	dis_sp_x,dis_sp_y,dis_ep_x,dis_ep_y; // displacement and new marker locations
+	Vec 		sp_x_loc, sp_y_loc, ep_x_loc, ep_y_loc;  // markers new location which was previously in the domain
 	Vec			xix_local, xiy_local;
+	IS			is1, is2;
+	MPI_Status 	status;
 
 	int			i_mk, comp, i, elem;
-	int			stencil;
+	int			stencil, *mk_int, mkn_int = 0;
+	int			*sl_e, *sl_w, *sl_n, *sl_s;  // send out as the ghost markers of the nearby processors
+	int			sn_e = 0, sn_w = 0, sn_n = 0, sn_s = 0;
+	int			*rl_e, *rl_w, *rl_n, *rl_s;  // receive the ghost markers from the nearby processors
+	int			rn_e , rn_w , rn_n, rn_s;
 	struct interp2d *interp;
+	double		mp[2];
+	int			bool1, bool2, bool3;
+	double      *sbd = ptr_f->idx_range.shared_bound;
+	double		*ibd = ptr_f->idx_range.int_bound;
+	int			*spr = ptr_f->idx_range.shared_pro;
+	int 		px = ptr_f->proc_coords[0], py = ptr_f->proc_coords[1];
+	int			Nx = ptr_f->Nx, Ny = ptr_f->Ny;
 
 	VecCreateSeq(PETSC_COMM_SELF,ptr_i->xix_N +ptr_i->xix_ghoN,&xix_local);
     VecCreateSeq(PETSC_COMM_SELF,ptr_i->xiy_N +ptr_i->xiy_ghoN,&xiy_local);
@@ -366,18 +470,239 @@ void build_current_marker(Lag_marker* ptr_mk, Field_S* ptr_s, Index_S* ptr_i, Ap
 	VecDuplicate(ptr_mk->sp_x0,&dis_ep_x);
 	VecDuplicate(ptr_mk->sp_x0,&dis_ep_y);
 
-    for(elem = 0; elem <3; elem ++){ // displacement, velocities, acceleration
+	// Calculate the current location of the
+	VecScatterBegin(ptr_u->scatter_x,ptr_s->xi,xix_local,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterEnd  (ptr_u->scatter_x,ptr_s->xi,xix_local,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterBegin(ptr_u->scatter_y,ptr_s->xi,xiy_local,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterEnd  (ptr_u->scatter_y,ptr_s->xi,xiy_local,INSERT_VALUES,SCATTER_FORWARD);
+
+	VecGetArray	(xix_local,&xix);
+	VecGetArray	(xiy_local,&xiy);
+
+	VecGetArray(dis_sp_x,&sp_x);
+	VecGetArray(dis_sp_y,&sp_y);
+	VecGetArray(dis_ep_x,&ep_x);
+	VecGetArray(dis_ep_y,&ep_y);
+
+	for(comp=0; comp<4; comp++){
+
+		switch (comp)
+		{
+		case 0:
+			mkp   = sp_x;
+			interp= ptr_mk->interp_s_x;
+			xi = xix;
+			break;
+		case 1:
+			mkp   = sp_y;
+			interp= ptr_mk->interp_s_y;
+			xi = xiy;
+			break;
+		case 2:
+			mkp   = ep_x;
+			interp= ptr_mk->interp_e_x;
+			xi = xix;
+			break;
+		case 3:
+			mkp   = ep_y;
+			interp= ptr_mk->interp_e_y;
+			xi = xiy;
+			break;
+		}
+
+		for(i_mk=0; i_mk<ptr_mk->nlocal_s;i_mk++){ // loop through local markers
+			mkp[i_mk] =0.0;
+			for(i=0; i<interp[i_mk].n; i++){
+				stencil 	=  interp[i_mk].sten[i];
+				mkp[i_mk] 	+= interp[i_mk].coeff[i]*xi[stencil];
+			}
+		}
+	}
+	VecRestoreArray(dis_sp_x,&sp_x);
+	VecRestoreArray(dis_sp_y,&sp_y);
+	VecRestoreArray(dis_ep_x,&ep_x);
+	VecRestoreArray(dis_ep_y,&ep_y);
+
+	VecRestoreArray(xix_local,&xix);
+	VecRestoreArray(xiy_local,&xiy);
+
+	VecAXPY(dis_sp_x,c,ptr_mk->sp_x0);
+	VecAXPY(dis_sp_y,c,ptr_mk->sp_y0);
+	VecAXPY(dis_ep_x,c,ptr_mk->ep_x0);
+	VecAXPY(dis_ep_y,c,ptr_mk->ep_y0);
+
+	// Scatter the distributed updated marker location to the local vec
+
+	VecCreateSeq(PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&sp_x_loc);
+	VecCreateSeq(PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&sp_y_loc);
+	VecCreateSeq(PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ep_x_loc);
+	VecCreateSeq(PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ep_y_loc);
+
+	VecScatterBegin(ptr_mk->glo2loc ,dis_sp_x,sp_x_loc,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterEnd  (ptr_mk->glo2loc ,dis_sp_x,sp_x_loc,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterBegin(ptr_mk->glo2loc ,dis_sp_y,sp_y_loc,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterEnd  (ptr_mk->glo2loc ,dis_sp_y,sp_y_loc,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterBegin(ptr_mk->glo2loc ,dis_ep_x,ep_x_loc,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterEnd  (ptr_mk->glo2loc ,dis_ep_x,ep_x_loc,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterBegin(ptr_mk->glo2loc ,dis_ep_y,ep_y_loc,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterEnd  (ptr_mk->glo2loc ,dis_ep_y,ep_y_loc,INSERT_VALUES,SCATTER_FORWARD);
+
+	// Find out the updated interior markers and shared markers
+	VecGetArray(sp_x_loc,&sp_x);
+	VecGetArray(sp_y_loc,&sp_y);
+	VecGetArray(ep_x_loc,&ep_x);
+	VecGetArray(ep_y_loc,&ep_y);
+
+	mk_int	= ivector(0, ptr_mk->nglobal-1);
+	sl_e 	= ivector(0, ptr_mk->nglobal-1);
+	sl_w 	= ivector(0, ptr_mk->nglobal-1);
+	sl_n 	= ivector(0, ptr_mk->nglobal-1);
+	sl_s 	= ivector(0, ptr_mk->nglobal-1);
+
+	for(i=0; i < ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f; i++)
+	{
+	   	mp[0] = (sp_x[i] + ep_x[i])/2;
+	    mp[1] = (sp_y[i] + ep_y[i])/2;
+
+	    // interior markers
+	    if (mp[0]>ibd[0] && mp[0]<=ibd[1] && mp[1]>ibd[2] && mp[1]<=ibd[3]){
+
+	    	mk_int[mkn_int] = ptr_mk->list_f[i];
+	    	mkn_int ++;
+
+	    	// ghosted marker of left processor
+	    	if ((sp_x[i]<= sbd[0]) || (ep_x[i] <= sbd[0])){
+		    	sl_w[sn_w] = ptr_mk->list_f[i];
+		    	sn_w ++;	}
+
+	    	// right processor
+	    	if ((sp_x[i] >= sbd[1]) || (ep_x[i] >= sbd[1])){
+		    	sl_e[sn_e] = ptr_mk->list_f[i];
+		    	sn_e ++;	}
+
+	    	// lower processor
+	    	if ((sp_y[i] <= sbd[2]) || (ep_y[i] <= sbd[2])){
+		    	sl_s[sn_s] = ptr_mk->list_f[i];
+		    	sn_s ++;	}
+
+	    	// upper processor
+	    	if ((sp_y[i] >= sbd[3]) || (ep_y[i] >= sbd[3])){
+		    	sl_n[sn_n] = ptr_mk->list_f[i];
+		    	sn_n ++;	}
+	    }
+
+	}
+	VecRestoreArray(sp_x_loc,&sp_x);
+	VecRestoreArray(sp_y_loc,&sp_y);
+	VecRestoreArray(ep_x_loc,&ep_x);
+	VecRestoreArray(ep_y_loc,&ep_y);
+
+	printf("interior %d, shared %d %d %d %d\n", mkn_int, sn_w,sn_e,sn_s,sn_n);
+
+	rn_e = 0;
+	rn_w = 0;
+	rn_s = 0;
+	rn_n = 0;
+
+	//printf("rank %d, %d %d %d %d\n", rank, spr[0],spr[1],spr[2],spr[3]);
+
+	// sending and receiving
+	// to left
+	if (spr[0] != -1)  MPI_Send(&sn_w, 1, MPI_INT, spr[0],101, MPI_COMM_WORLD);
+	if (spr[1] != -1)
+	{
+		MPI_Recv(&rn_e, 1, MPI_INT, spr[1],101, MPI_COMM_WORLD, &status);
+		rl_e 	= ivector(0, rn_e-1);
+	}
+	if (spr[0] != -1) MPI_Send(sl_w, sn_w, MPI_INT,spr[0],101, MPI_COMM_WORLD);
+	if (spr[1] != -1) MPI_Recv(rl_e, rn_e, MPI_INT, spr[1],101, MPI_COMM_WORLD, &status);
+
+	// to right
+	if (spr[1] != -1)  MPI_Send(&sn_e, 1, MPI_INT, spr[1],101, MPI_COMM_WORLD);
+	if (spr[0] != -1)
+	{
+		MPI_Recv(&rn_w, 1, MPI_INT, spr[0],101, MPI_COMM_WORLD, &status);
+		rl_w 	= ivector(0, rn_w-1);
+	}
+	if (spr[1] != -1)  MPI_Send(sl_e, sn_e, MPI_INT, spr[1],101, MPI_COMM_WORLD);
+	if (spr[0] != -1)  MPI_Recv(rl_w, rn_w, MPI_INT, spr[0],101, MPI_COMM_WORLD, &status);
+
+	// to lower
+	if (spr[2] != -1)  MPI_Send(&sn_s, 1, MPI_INT, spr[2],101, MPI_COMM_WORLD);
+	if (spr[3] != -1)
+	{
+		MPI_Recv(&rn_n, 1, MPI_INT, spr[3],101, MPI_COMM_WORLD, &status);
+		rl_n 	= ivector(0, rn_n-1);
+	}
+	if (spr[2] != -1) MPI_Send(sl_s, sn_s, MPI_INT, spr[2],101, MPI_COMM_WORLD);
+	if (spr[3] != -1) MPI_Recv(rl_n, rn_n, MPI_INT, spr[3],101, MPI_COMM_WORLD, &status);
+
+	// to upper
+	if (spr[3] != -1)  MPI_Send(&sn_n, 1, MPI_INT, spr[3],101, MPI_COMM_WORLD);
+	if (spr[2] != -1)
+	{
+		MPI_Recv(&rn_s, 1, MPI_INT, spr[2],101, MPI_COMM_WORLD, &status);
+		rl_s 	= ivector(0, rn_s-1);
+	}
+	if (spr[3] != -1)  MPI_Send(sl_n, sn_n, MPI_INT, spr[3],101, MPI_COMM_WORLD);
+	if (spr[2] != -1)  MPI_Recv(rl_s, rn_s, MPI_INT, spr[2],101, MPI_COMM_WORLD, &status);
+
+
+	//printf("rank %d marker %d %d %d %d\n",rank,rn_e,rn_w,rn_s,rn_n);
+	// Updating list and new VecScatter
+
+	free_ivector(ptr_mk->list_f, 0, ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f -1);
+	ptr_mk->nlocal_f 	 = mkn_int;
+	ptr_mk->nlocal_gho_f = rn_w + rn_e + rn_s + rn_n;
+	ptr_mk->list_f 		 = ivector(0, ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f -1);
+
+	i = 0; 		  for (i_mk = 0; i_mk < mkn_int; i_mk++ )  ptr_mk->list_f[i_mk+i] =  mk_int[i_mk];
+	i += mkn_int; for (i_mk = 0; i_mk < rn_w; i_mk++ ) 	ptr_mk->list_f[i_mk+i] =  rl_w[i_mk];
+	i += rn_w; 	  for (i_mk = 0; i_mk < rn_e; i_mk++ ) 	ptr_mk->list_f[i_mk+i] =  rl_e[i_mk];
+	i += rn_e; 	  for (i_mk = 0; i_mk < rn_s; i_mk++ ) 	ptr_mk->list_f[i_mk+i] =  rl_s[i_mk];
+	i += rn_s; 	  for (i_mk = 0; i_mk < rn_n; i_mk++ ) 	ptr_mk->list_f[i_mk+i] =  rl_n[i_mk];
+
+	//for(i=0; i < ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f; i++)
+		//printf("rank %d i %d %d\n",rank,i,ptr_mk->list_f[i]);
+
+	VecDestroy(&ptr_mk->sp_x); VecDestroy(&ptr_mk->sp_y); VecDestroy(&ptr_mk->ep_x); VecDestroy(&ptr_mk->ep_y);
+	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ptr_mk->sp_x);
+	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ptr_mk->sp_y);
+	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ptr_mk->ep_x);
+	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ptr_mk->ep_y);
+
+	ISCreateGeneral(PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,ptr_mk->list_f,PETSC_COPY_VALUES,&is2);
+	ISCreateStride (PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,0,1,&is1);
+	VecScatterCreate(ptr_mk->sp_x0,is2,ptr_mk->sp_x,is1,&ptr_mk->glo2loc);
+
+	VecScatterBegin(ptr_mk->glo2loc ,dis_sp_x,ptr_mk->sp_x,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterEnd  (ptr_mk->glo2loc ,dis_sp_x,ptr_mk->sp_x,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterBegin(ptr_mk->glo2loc ,dis_sp_y,ptr_mk->sp_y,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterEnd  (ptr_mk->glo2loc ,dis_sp_y,ptr_mk->sp_y,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterBegin(ptr_mk->glo2loc ,dis_ep_x,ptr_mk->ep_x,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterEnd  (ptr_mk->glo2loc ,dis_ep_x,ptr_mk->ep_x,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterBegin(ptr_mk->glo2loc ,dis_ep_y,ptr_mk->ep_y,INSERT_VALUES,SCATTER_FORWARD);
+	VecScatterEnd  (ptr_mk->glo2loc ,dis_ep_y,ptr_mk->ep_y,INSERT_VALUES,SCATTER_FORWARD);
+
+	// dealing with accelerations and velocities
+	VecDestroy(&ptr_mk->sp_u); VecDestroy(&ptr_mk->sp_v);
+	VecDestroy(&ptr_mk->ep_u); VecDestroy(&ptr_mk->ep_v);
+	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ptr_mk->sp_u);
+	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ptr_mk->sp_v);
+	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ptr_mk->ep_u);
+	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ptr_mk->ep_v);
+
+	VecDestroy(&ptr_mk->sp_ax); VecDestroy(&ptr_mk->sp_ay);
+	VecDestroy(&ptr_mk->ep_ax); VecDestroy(&ptr_mk->ep_ay);
+	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ptr_mk->sp_ax);
+	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ptr_mk->sp_ay);
+	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ptr_mk->ep_ax);
+	VecCreateSeq	(PETSC_COMM_SELF,ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f,&ptr_mk->ep_ay);
+
+    for(elem = 1; elem <3; elem ++){ // displacement, velocities, acceleration
 
     	switch(elem)
     	{
-    	case 0:
-    		VecScatterBegin(ptr_u->scatter_x,ptr_s->xi,xix_local,INSERT_VALUES,SCATTER_FORWARD);
-    		VecScatterEnd  (ptr_u->scatter_x,ptr_s->xi,xix_local,INSERT_VALUES,SCATTER_FORWARD);
-
-    		VecScatterBegin(ptr_u->scatter_y,ptr_s->xi,xiy_local,INSERT_VALUES,SCATTER_FORWARD);
-    		VecScatterEnd  (ptr_u->scatter_y,ptr_s->xi,xiy_local,INSERT_VALUES,SCATTER_FORWARD);
-    		break;
-
     	case 1:
     		VecScatterBegin(ptr_u->scatter_x,ptr_s->dxi,xix_local,INSERT_VALUES,SCATTER_FORWARD);
     	    VecScatterEnd  (ptr_u->scatter_x,ptr_s->dxi,xix_local,INSERT_VALUES,SCATTER_FORWARD);
@@ -387,11 +712,11 @@ void build_current_marker(Lag_marker* ptr_mk, Field_S* ptr_s, Index_S* ptr_i, Ap
     	    break;
 
     	case 2:
-    		VecScatterBegin(ptr_u->scatter_x,ptr_s->dxi,xix_local,INSERT_VALUES,SCATTER_FORWARD);
-    	    VecScatterEnd  (ptr_u->scatter_x,ptr_s->dxi,xix_local,INSERT_VALUES,SCATTER_FORWARD);
+    		VecScatterBegin(ptr_u->scatter_x,ptr_s->ddxi,xix_local,INSERT_VALUES,SCATTER_FORWARD);
+    	    VecScatterEnd  (ptr_u->scatter_x,ptr_s->ddxi,xix_local,INSERT_VALUES,SCATTER_FORWARD);
 
-    	    VecScatterBegin(ptr_u->scatter_y,ptr_s->dxi,xiy_local,INSERT_VALUES,SCATTER_FORWARD);
-    	    VecScatterEnd  (ptr_u->scatter_y,ptr_s->dxi,xiy_local,INSERT_VALUES,SCATTER_FORWARD);
+    	    VecScatterBegin(ptr_u->scatter_y,ptr_s->ddxi,xiy_local,INSERT_VALUES,SCATTER_FORWARD);
+    	    VecScatterEnd  (ptr_u->scatter_y,ptr_s->ddxi,xiy_local,INSERT_VALUES,SCATTER_FORWARD);
     	    break;
     	}
 
@@ -453,86 +778,48 @@ void build_current_marker(Lag_marker* ptr_mk, Field_S* ptr_s, Index_S* ptr_i, Ap
 
 		switch(elem)
 		{
-		case 0:
-
-			// New location of markers
-			VecAXPY(dis_sp_x,c,ptr_mk->sp_x0);
-			VecAXPY(dis_sp_y,c,ptr_mk->sp_y0);
-			VecAXPY(dis_ep_x,c,ptr_mk->ep_x0);
-			VecAXPY(dis_ep_y,c,ptr_mk->ep_y0);
-
-			// Distribute the updated location to all the processors
-			VecScatterBegin	(ptr_mk->loc2all,dis_sp_x,ptr_mk->sp_x,INSERT_VALUES,SCATTER_FORWARD);
-			VecScatterEnd	(ptr_mk->loc2all,dis_sp_x,ptr_mk->sp_x,INSERT_VALUES,SCATTER_FORWARD);
-
-			VecScatterBegin	(ptr_mk->loc2all,dis_sp_y,ptr_mk->sp_y,INSERT_VALUES,SCATTER_FORWARD);
-			VecScatterEnd	(ptr_mk->loc2all,dis_sp_y,ptr_mk->sp_y,INSERT_VALUES,SCATTER_FORWARD);
-
-			VecScatterBegin	(ptr_mk->loc2all,dis_ep_x,ptr_mk->ep_x,INSERT_VALUES,SCATTER_FORWARD);
-			VecScatterEnd	(ptr_mk->loc2all,dis_ep_x,ptr_mk->ep_x,INSERT_VALUES,SCATTER_FORWARD);
-
-			VecScatterBegin	(ptr_mk->loc2all,dis_ep_y,ptr_mk->ep_y,INSERT_VALUES,SCATTER_FORWARD);
-			VecScatterEnd	(ptr_mk->loc2all,dis_ep_y,ptr_mk->ep_y,INSERT_VALUES,SCATTER_FORWARD);
-
-			break;
-
 		case 1:
 
-			VecScatterBegin	(ptr_mk->loc2all,dis_sp_x,ptr_mk->sp_u,INSERT_VALUES,SCATTER_FORWARD);
-			VecScatterEnd	(ptr_mk->loc2all,dis_sp_x,ptr_mk->sp_u,INSERT_VALUES,SCATTER_FORWARD);
+			VecScatterBegin	(ptr_mk->glo2loc,dis_sp_x,ptr_mk->sp_u,INSERT_VALUES,SCATTER_FORWARD);
+			VecScatterEnd	(ptr_mk->glo2loc,dis_sp_x,ptr_mk->sp_u,INSERT_VALUES,SCATTER_FORWARD);
 
-			VecScatterBegin	(ptr_mk->loc2all,dis_sp_y,ptr_mk->sp_v,INSERT_VALUES,SCATTER_FORWARD);
-			VecScatterEnd	(ptr_mk->loc2all,dis_sp_y,ptr_mk->sp_v,INSERT_VALUES,SCATTER_FORWARD);
+			VecScatterBegin	(ptr_mk->glo2loc,dis_sp_y,ptr_mk->sp_v,INSERT_VALUES,SCATTER_FORWARD);
+			VecScatterEnd	(ptr_mk->glo2loc,dis_sp_y,ptr_mk->sp_v,INSERT_VALUES,SCATTER_FORWARD);
 
-			VecScatterBegin	(ptr_mk->loc2all,dis_ep_x,ptr_mk->ep_u,INSERT_VALUES,SCATTER_FORWARD);
-			VecScatterEnd	(ptr_mk->loc2all,dis_ep_x,ptr_mk->ep_u,INSERT_VALUES,SCATTER_FORWARD);
+			VecScatterBegin	(ptr_mk->glo2loc,dis_ep_x,ptr_mk->ep_u,INSERT_VALUES,SCATTER_FORWARD);
+			VecScatterEnd	(ptr_mk->glo2loc,dis_ep_x,ptr_mk->ep_u,INSERT_VALUES,SCATTER_FORWARD);
 
-			VecScatterBegin	(ptr_mk->loc2all,dis_ep_y,ptr_mk->ep_v,INSERT_VALUES,SCATTER_FORWARD);
-			VecScatterEnd	(ptr_mk->loc2all,dis_ep_y,ptr_mk->ep_v,INSERT_VALUES,SCATTER_FORWARD);
+			VecScatterBegin	(ptr_mk->glo2loc,dis_ep_y,ptr_mk->ep_v,INSERT_VALUES,SCATTER_FORWARD);
+			VecScatterEnd	(ptr_mk->glo2loc,dis_ep_y,ptr_mk->ep_v,INSERT_VALUES,SCATTER_FORWARD);
 			break;
 
 		case 2:
 
-			VecScatterBegin	(ptr_mk->loc2all,dis_sp_x,ptr_mk->sp_ax,INSERT_VALUES,SCATTER_FORWARD);
-			VecScatterEnd	(ptr_mk->loc2all,dis_sp_x,ptr_mk->sp_ax,INSERT_VALUES,SCATTER_FORWARD);
+			VecScatterBegin	(ptr_mk->glo2loc,dis_sp_x,ptr_mk->sp_ax,INSERT_VALUES,SCATTER_FORWARD);
+			VecScatterEnd	(ptr_mk->glo2loc,dis_sp_x,ptr_mk->sp_ax,INSERT_VALUES,SCATTER_FORWARD);
 
-			VecScatterBegin	(ptr_mk->loc2all,dis_sp_y,ptr_mk->sp_ay,INSERT_VALUES,SCATTER_FORWARD);
-			VecScatterEnd	(ptr_mk->loc2all,dis_sp_y,ptr_mk->sp_ay,INSERT_VALUES,SCATTER_FORWARD);
+			VecScatterBegin	(ptr_mk->glo2loc,dis_sp_y,ptr_mk->sp_ay,INSERT_VALUES,SCATTER_FORWARD);
+			VecScatterEnd	(ptr_mk->glo2loc,dis_sp_y,ptr_mk->sp_ay,INSERT_VALUES,SCATTER_FORWARD);
 
-			VecScatterBegin	(ptr_mk->loc2all,dis_ep_x,ptr_mk->ep_ax,INSERT_VALUES,SCATTER_FORWARD);
-			VecScatterEnd	(ptr_mk->loc2all,dis_ep_x,ptr_mk->ep_ax,INSERT_VALUES,SCATTER_FORWARD);
+			VecScatterBegin	(ptr_mk->glo2loc,dis_ep_x,ptr_mk->ep_ax,INSERT_VALUES,SCATTER_FORWARD);
+			VecScatterEnd	(ptr_mk->glo2loc,dis_ep_x,ptr_mk->ep_ax,INSERT_VALUES,SCATTER_FORWARD);
 
-			VecScatterBegin	(ptr_mk->loc2all,dis_ep_y,ptr_mk->ep_ay,INSERT_VALUES,SCATTER_FORWARD);
-			VecScatterEnd	(ptr_mk->loc2all,dis_ep_y,ptr_mk->ep_ay,INSERT_VALUES,SCATTER_FORWARD);
+			VecScatterBegin	(ptr_mk->glo2loc,dis_ep_y,ptr_mk->ep_ay,INSERT_VALUES,SCATTER_FORWARD);
+			VecScatterEnd	(ptr_mk->glo2loc,dis_ep_y,ptr_mk->ep_ay,INSERT_VALUES,SCATTER_FORWARD);
 			break;
 		}
     }
 
-	//get the ratio of the current length and initial length
-	VecGetArray(ptr_mk->l0,&l0);
-
-	VecGetArray(ptr_mk->sp_x,&sp_x);
-	VecGetArray(ptr_mk->sp_y,&sp_y);
-	VecGetArray(ptr_mk->ep_x,&ep_x);
-	VecGetArray(ptr_mk->ep_y,&ep_y);
-
-	for(i_mk = 0; i_mk < ptr_mk->nglobal; i_mk++){
-
-		ptr_mk->lratio[i_mk] = sqrt((sp_x[i_mk]-ep_x[i_mk])*(sp_x[i_mk]-ep_x[i_mk])
-    			+ (sp_y[i_mk]-ep_y[i_mk])*(sp_y[i_mk]-ep_y[i_mk]))/l0[i_mk];
-
-		//if(ptr_u->rank == 0)
-		//	printf("%d %f %f %f %f\n",i_mk,sp_x[i_mk],sp_y[i_mk],ep_x[i_mk],ep_y[i_mk]);
-	}
-
-	VecRestoreArray(ptr_mk->sp_x,&sp_x);
-	VecRestoreArray(ptr_mk->sp_y,&sp_y);
-	VecRestoreArray(ptr_mk->l0,	 &l0);
-
-	VecDestroy(&dis_sp_x);
-	VecDestroy(&dis_sp_y);
-	VecDestroy(&dis_ep_x);
-	VecDestroy(&dis_ep_y);
+	VecDestroy(&dis_sp_x); 	VecDestroy(&dis_sp_y);
+	VecDestroy(&dis_ep_x); 	VecDestroy(&dis_ep_y);
+	VecDestroy(&xix_local); VecDestroy(&xiy_local);
+	ISDestroy (&is1);
+	ISDestroy (&is2);
+	free_ivector(mk_int, 0, ptr_mk->nglobal-1);
+	free_ivector(sl_e, 0, ptr_mk->nglobal-1);
+	free_ivector(sl_w, 0, ptr_mk->nglobal-1);
+	free_ivector(sl_s, 0, ptr_mk->nglobal-1);
+	free_ivector(sl_n, 0, ptr_mk->nglobal-1);
 
 }
 
@@ -553,26 +840,14 @@ void update_sdf(Grid_S* ptr_g, Lag_marker* ptr_mk, AppCtx* ptr_u, Field_F* ptr_f
 	double		gridx,gridy,dx = ptr_f->dx;
 
 	int			search_x[2], search_y[2];
-	int 		panel_i,bool1, bool2,s,i,j, count = 0;
+	int 		loc_i,panel_i,bool1, bool2,s,i,j;
 	const int	search_range = 0;
-
-	//if (ptr_u->rank == 0){
-	//	VecView(ptr_mk->sp_x,PETSC_VIEWER_STDOUT_SELF	);
-	//	VecView(ptr_mk->sp_y,PETSC_VIEWER_STDOUT_SELF	);
-	//}
 
 	// get the coordinates of the markers
 	VecGetArray(ptr_mk->sp_x, &sx);
 	VecGetArray(ptr_mk->sp_y, &sy);
 	VecGetArray(ptr_mk->ep_x, &ex);
 	VecGetArray(ptr_mk->ep_y, &ey);
-
-	// get the limits of x- y- coordinates of the local processor
-	xd[0]=ptr_f->idx_range.p_raw_ghost[0][0]*dx + ptr_f->x_grid[0];
-	xd[1]=ptr_f->idx_range.p_raw_ghost[0][1]*dx + ptr_f->x_grid[0];
-
-	yd[0]=ptr_f->idx_range.p_raw_ghost[1][0]*dx + ptr_f->y_grid[0];
-	yd[1]=ptr_f->idx_range.p_raw_ghost[1][1]*dx + ptr_f->y_grid[0];
 
 	// initialize the value in panel_u, panel_v, panel_p
 	// if has value 0: means haven't updated sdf yet
@@ -601,19 +876,13 @@ void update_sdf(Grid_S* ptr_g, Lag_marker* ptr_mk, AppCtx* ptr_u, Field_F* ptr_f
 	DMDAVecGetArray(ptr_f->da,	ptr_f->ratio_p,	&ratio_p);
 
 	// loop through all the boundary element
-	for (panel_i=0; panel_i<ptr_mk->nglobal; panel_i++)
+	for (loc_i=0; loc_i<ptr_mk->nlocal_f + ptr_mk->nlocal_gho_f; loc_i++)
 	{
-		x1 = sx[panel_i]; x2 = ex[panel_i];
-		y1 = sy[panel_i]; y2 = ey[panel_i];
+		x1 = sx[loc_i]; x2 = ex[loc_i];
+		y1 = sy[loc_i]; y2 = ey[loc_i];
 
-		bool1 = (x1<=xd[1]) && (x1>=xd[0]) && (y1<=yd[1]) && (y1>=yd[0]);
-		bool2 = (x2<=xd[1]) && (x2>=xd[0]) && (y2<=yd[1]) && (y2>=yd[0]);
-
-		if(bool1==0 && bool2==0) // if the boundary element is not in the range owned by current processor
-			continue;
-
-		ptr_mk->list_f[count] = panel_i;
-		count++;
+		//printf("rank %d i %d %f %f %f %f\n", ptr_u->rank,loc_i,x1,y1,x2,y2);
+		//panel_i = ptr_mk->list_f[loc_i];
 
 		// setup boundary element info
 		be_m = (y2-y1)/(x1-x2);
@@ -631,19 +900,17 @@ void update_sdf(Grid_S* ptr_g, Lag_marker* ptr_mk, AppCtx* ptr_u, Field_F* ptr_f
 		n[0]  = nc[0]/sqrt(nc[0]*nc[0]+nc[1]*nc[1]);
 		n[1]  = nc[1]/sqrt(nc[0]*nc[0]+nc[1]*nc[1]);
 
-		if  (x1!=x2)// if it is not a vertical panel
-		{
+		if  (x1!=x2){// if it is not a vertical panel
 			nc[0]=be_m; nc[1]=1;
 			s=SIGN(1,n[0]*nc[0]+n[1]*nc[1]);
-			ptr_mk->nx[panel_i] = s*be_m/be_d;
-			ptr_mk->ny[panel_i] = s/be_d;
+			ptr_mk->nx[loc_i] = s*be_m/be_d;
+			ptr_mk->ny[loc_i] = s/be_d;
 		}
-		else
-		{
+		else {
 			nc[0]=1; nc[1]=0;
 			s=SIGN(1,n[0]*nc[0]+n[1]*nc[1]);
-			ptr_mk->nx[panel_i] = SIGN(1,n[0]);
-			ptr_mk->ny[panel_i] = 0;
+			ptr_mk->nx[loc_i] = SIGN(1,n[0]);
+			ptr_mk->ny[loc_i] = 0;
 		}
 
 		// searching nearby grids ============== p
@@ -661,55 +928,48 @@ void update_sdf(Grid_S* ptr_g, Lag_marker* ptr_mk, AppCtx* ptr_u, Field_F* ptr_f
 		search_y[1] = IMIN(ceil	(sorted_y[1]/dx-0.5)+search_range,	ptr_f->idx_range.p_raw[1][1]);
 		search_y[1] = IMAX(search_y[1],								ptr_f->idx_range.p_raw[1][0]);
 
-
+		//printf("rank %d i %d search range %d %d %d %d\n", ptr_u->rank,loc_i,search_x[0],search_x[1],search_y[0],search_y[1] );
 		for (i = search_x[0]; i<=search_x[1]; i++)
 			for (j = search_y[0]; j<=search_y[1]; j++)
 		    {
 				gridx = ptr_f->xm_grid[i];   gridy = ptr_f->ym_grid[j];
 
-				if (x1!=x2)
-				{
+				if (x1!=x2){
 		            d  = (be_m*gridx + gridy +be_c)/be_d;
 		            xb = gridx-d/be_d*be_m;
 		            yb = gridy-d/be_d;
 		            c  = (xb-x1)/(x2-x1);
 				}
-				else
-				{
+				else{
 		            d = gridx-x1;
 		            xb = x1;  yb = gridy;
 		            c = (yb-y1)/(y2-y1);
 				}
 
-
-				if (c >=0 && c<=1)
-				{
+				if (c >=0 && c<=1){
 					//if(ptr_u->rank==0) printf("i,j,s*d dist %d %d %f %f\n",i,j,fabs(s*d),fabs(dist_p[j][i]));
 					if((panel_p[j][i]==0) || (fabs(s*d)<fabs(dist_p[j][i])))
 					{
 						dist_p[j][i] 	= s*d;
-						panel_p[j][i] 	= panel_i+1;   // The panel numbering begins from 1 here!!!!!
+						panel_p[j][i] 	= loc_i+1;   // The local panel indexing begins from 1 here!!!!!
 						ratio_p[j][i] 	= c;
 					}
 
 				}
-				else if (c<0)
-				{
+				else if (c<0){
 					dd = sqrt((gridx-x1)*(gridx-x1)+(gridy-y1)*(gridy-y1));
 					if((panel_p[j][i]==0) || ( dd < fabs(dist_p[j][i])))
 					{
 						dist_p[j][i] 	= 	SIGN(1,s*d)*dd;
-						panel_p[j][i] 	= -	(panel_i+1);
+						panel_p[j][i] 	= -	(loc_i+1);
 						ratio_p[j][i] 	= 	0;
 					}
 				}
-				else
-				{
+				else{
 					dd = sqrt((gridx-x2)*(gridx-x2)+(gridy-y2)*(gridy-y2));
-					if((panel_p[j][i]==0) || (dd < fabs(dist_p[j][i])))
-					{
+					if((panel_p[j][i]==0) || (dd < fabs(dist_p[j][i]))){
 						dist_p[j][i] 	= 	SIGN(1,s*d)*dd;
-						panel_p[j][i] 	= -	(panel_i+1);
+						panel_p[j][i] 	= -	(loc_i+1);
 						ratio_p[j][i] 	= 	1;
 					}
 				}
@@ -757,7 +1017,7 @@ void update_sdf(Grid_S* ptr_g, Lag_marker* ptr_mk, AppCtx* ptr_u, Field_F* ptr_f
 					if((panel_u[j][i]==0) || (fabs(s*d)<fabs(dist_u[j][i])))
 					{
 						dist_u[j][i] 	= s*d;
-						panel_u[j][i] 	= panel_i+1;   // The panel numbering begins from 1 here!!!!!
+						panel_u[j][i] 	= loc_i+1;   // The panel numbering begins from 1 here!!!!!
 						ratio_u[j][i] 	= c;
 					}
 
@@ -768,7 +1028,7 @@ void update_sdf(Grid_S* ptr_g, Lag_marker* ptr_mk, AppCtx* ptr_u, Field_F* ptr_f
 					if((panel_u[j][i]==0) || (fabs(dd)<fabs(dist_u[j][i])))
 					{
 						dist_u[j][i] 	= 	SIGN(1,s*d)*dd;
-						panel_u[j][i] 	= -	(panel_i+1);
+						panel_u[j][i] 	= -	(loc_i+1);
 						ratio_u[j][i] 	= 	0;
 					}
 				}
@@ -778,7 +1038,7 @@ void update_sdf(Grid_S* ptr_g, Lag_marker* ptr_mk, AppCtx* ptr_u, Field_F* ptr_f
 					if((panel_u[j][i]==0) || (fabs(dd)<fabs(dist_u[j][i])))
 					{
 						dist_u[j][i] 	= 	SIGN(1,s*d)*dd;
-						panel_u[j][i] 	= -	(panel_i+1);
+						panel_u[j][i] 	= -	(loc_i+1);
 						ratio_u[j][i] 	= 	1;
 					}
 				}
@@ -824,7 +1084,7 @@ void update_sdf(Grid_S* ptr_g, Lag_marker* ptr_mk, AppCtx* ptr_u, Field_F* ptr_f
 					if((panel_v[j][i]==0) || (fabs(s*d)<fabs(dist_v[j][i])))
 					{
 						dist_v[j][i] 	= s*d;
-						panel_v[j][i] 	= panel_i+1;   // The panel numbering begins from 1 here!!!!!
+						panel_v[j][i] 	= loc_i+1;   // The panel numbering begins from 1 here!!!!!
 						ratio_v[j][i] 	= c;
 					}
 				}
@@ -834,7 +1094,7 @@ void update_sdf(Grid_S* ptr_g, Lag_marker* ptr_mk, AppCtx* ptr_u, Field_F* ptr_f
 					if((panel_v[j][i]==0) || (abs(dd)<abs(dist_v[j][i])))
 					{
 						dist_v[j][i] 	= 	SIGN(1,s*d)*dd;
-						panel_v[j][i] 	= -	(panel_i+1);
+						panel_v[j][i] 	= -	(loc_i+1);
 						ratio_v[j][i] 	= 	0;
 					}
 				}
@@ -844,7 +1104,7 @@ void update_sdf(Grid_S* ptr_g, Lag_marker* ptr_mk, AppCtx* ptr_u, Field_F* ptr_f
 					if((panel_v[j][i]==0) || (fabs(dd)<fabs(dist_v[j][i])))
 					{
 						dist_v[j][i] 	= 	SIGN(1,s*d)*dd;
-						panel_v[j][i] 	= -	(panel_i+1);
+						panel_v[j][i] 	= -	(loc_i+1);
 						ratio_v[j][i] 	= 	1;
 					}
 				}
@@ -852,7 +1112,6 @@ void update_sdf(Grid_S* ptr_g, Lag_marker* ptr_mk, AppCtx* ptr_u, Field_F* ptr_f
 
 	}
 
-	ptr_mk->nlocal_f = count;
 	// update the sdf
 	DMDAVecRestoreArray(ptr_f->da,	ptr_f->dist_u,	&dist_u);
 	DMDAVecRestoreArray(ptr_f->da,	ptr_f->dist_v,	&dist_v);
@@ -891,7 +1150,6 @@ void update_sdf(Grid_S* ptr_g, Lag_marker* ptr_mk, AppCtx* ptr_u, Field_F* ptr_f
     PetscViewerDestroy(&viewer);
 }
 
-
 // Create forcing point list
 void ib_find_forcing_pts_2d(Field_F* ptr_f, Lag_marker* ptr_mk){
 
@@ -914,10 +1172,6 @@ void ib_find_forcing_pts_2d(Field_F* ptr_f, Lag_marker* ptr_mk){
     /* Interpolation templates */
 	int       n_offset  = sizeof(offset2d)/sizeof(offset2d_t);
 	dist_t   *dist_list = (dist_t *)malloc(sizeof(dist_t)*n_offset);
-
-	forcing_pts_list_init(&(ptr_f->flist_u));
-	forcing_pts_list_init(&(ptr_f->flist_v));
-	forcing_pts_list_init(&(ptr_f->flist_p));
 
 	DMGetLocalVector(ptr_f->da, &dist_map);        // local distance function map
 	DMGetLocalVector(ptr_f->da, &dist_map_ghosted);
@@ -942,8 +1196,8 @@ void ib_find_forcing_pts_2d(Field_F* ptr_f, Lag_marker* ptr_mk){
 	        {
 	            case 1: // u component
 
-	            	DMGlobalToLocalBegin(da,ptr_f->dist_u,INSERT_VALUES,local_dist);
-	            	DMGlobalToLocalEnd	(da,ptr_f->dist_u,INSERT_VALUES,local_dist);
+	            	DMGlobalToLocalBegin(da, ptr_f->dist_u,INSERT_VALUES,local_dist);
+	            	DMGlobalToLocalEnd	(da, ptr_f->dist_u,INSERT_VALUES,local_dist);
 	                ratio= ratio_u; // added by Peggy
 	                panel= panel_u; // added by Peggy
 	                x    = ptr_f->x_grid;
@@ -1028,7 +1282,7 @@ void ib_find_forcing_pts_2d(Field_F* ptr_f, Lag_marker* ptr_mk){
 	            }// b loop
 
 	            if (count < 2)
-	                printf("!!! (%d,%d) has ONLY %d interplation template points\n",
+	                printf("!!! (%d,%d) has ONLY %d interpolation template points\n",
 	                       i,j,count);
 
 	            // sort offset points using their distances to the forcing point
@@ -1039,7 +1293,7 @@ void ib_find_forcing_pts_2d(Field_F* ptr_f, Lag_marker* ptr_mk){
 	                list->data[m].tp[b] = dist_list[b].i;
 	            }
 
-	            // calculate the coordiante of the surface point whose normal
+	            // calculate the coordinate of the surface point whose normal
 	            // vector passes the forcing point.
 
 	            pn = fabs(panel[j][i])-1; //
@@ -1047,8 +1301,8 @@ void ib_find_forcing_pts_2d(Field_F* ptr_f, Lag_marker* ptr_mk){
 
 	            list->data[m].surf[0]  = rt*(ex[pn]-sx[pn])+sx[pn];
 	            list->data[m].surf[1]  = rt*(ey[pn]-sy[pn])+sy[pn];
-	            list->data[m].panel 	= pn;
-	            list->data[m].ratio 	= rt;
+	            //list->data[m].panel 	= ptr_mk->list_f[pn];
+	            //list->data[m].ratio 	= rt;
 
 	            if (rt >=0 && rt<=1){
 	            	list->data[m].n[0] = ptr_mk->nx[pn];
@@ -1066,6 +1320,29 @@ void ib_find_forcing_pts_2d(Field_F* ptr_f, Lag_marker* ptr_mk){
 
 	        DMDAVecRestoreArray(da, dist_map_ghosted, &dist_map_array);
 	        DMDAVecRestoreArray(da, local_dist, 	  &dist);
+
+	        // construct global forcing point map from local map
+	        switch (comp)
+	        {
+	        case 1: // u component
+
+	        	DMLocalToGlobalBegin(da,dist_map_ghosted,INSERT_VALUES,ptr_f->dist_map_u);
+	        	DMLocalToGlobalEnd	(da,dist_map_ghosted,INSERT_VALUES,ptr_f->dist_map_u);
+	        	break;
+
+	        case 2: // v component
+
+	        	DMLocalToGlobalBegin(da,dist_map_ghosted,INSERT_VALUES,ptr_f->dist_map_v);
+	        	DMLocalToGlobalEnd	(da,dist_map_ghosted,INSERT_VALUES,ptr_f->dist_map_v);
+	        	break;
+
+	        case 3: // p component
+
+	        	DMLocalToGlobalBegin(da,dist_map_ghosted,INSERT_VALUES,ptr_f->dist_map_p);
+	        	DMLocalToGlobalEnd	(da,dist_map_ghosted,INSERT_VALUES,ptr_f->dist_map_p);
+	        	break;
+
+	        } // end of switch
 	} // end of comp loop
 
 
@@ -1120,11 +1397,6 @@ void apply_forcing_2d(Field_F *f, const double sor)
     double **u_a, **v_a, **u_real, **v_real;
     double b[3], c[3], a[9], *x, *y;
     int 	id,i;
-
-    //MPI_Comm_rank(f->comm, &rank);
-    //if (rank==0 && verb) {
-    //    printf("\n\n########## apply forcing to u ###########\n\n");
-    //}
 
     DMGetLocalVector	(f->da, &u_vec);
     DMGlobalToLocalBegin(f->da, f->u, INSERT_VALUES, u_vec);
@@ -1251,320 +1523,276 @@ void apply_forcing_2d(Field_F *f, const double sor)
 
 void force_calculation(Index_S* ptr_i, Field_F* ptr_f, Field_S* ptr_s, Lag_marker* ptr_mk){
 
-	double	*par_ux, *par_uy, *par_vx, *par_vy, *pressure;
-	const double  *sx, *sy, *ex, *ey;
-	int		id, panel;
-	int 	i,j, tp1, tp2, i1, i2, j1, j2;
-	double	interp_sten[3], a[9] ,c[3], ratio; //
-	Vec		uvp_vec;
-	double  **uvp_array;
-	DM		da = ptr_f->da;
-	forcing_point_list_t *list;
+	const double  *sx, *sy, *ex,*ey,*panelu, *panelv, *panelax, *panelay, *l0;
+	const double  *tx, *ty;
+	int 		loc_panel, count, panel, id_t[2], rank;
+	double		ref_pressure = 0, a[9], b[3], c[3];
+	double		**u_ary, **v_ary, **p_ary;
+	double		**fpm_u_ary, **fpm_v_ary, **fpm_p_ary;
+	double		**dst_u_ary, **dst_v_ary, **dst_p_ary;
+	double		mp[2], data[2][16], ux, uy, vx, vy, pp,lratio, trac[2],nx,ny;
+	int 		pan_i,pan_j, i,j, ii1, ii2, jj1, jj2;
+	dist_t2  	dist_list[16];
+	Vec			panelu_vec, panelv_vec, panelax_vec, panelay_vec;
+	Vec			u_vec, v_vec, p_vec;
+	Vec			du_vec, dv_vec, dp_vec;
+	Vec			fu_vec, fv_vec, fp_vec;
 
-	par_ux 	 = dvector(0, ptr_f->flist_u.total-1);
-	par_uy 	 = dvector(0, ptr_f->flist_u.total-1);
-	par_vx 	 = dvector(0, ptr_f->flist_v.total-1);
-	par_vy 	 = dvector(0, ptr_f->flist_v.total-1);
-	pressure = dvector(0, ptr_f->flist_p.total-1);
+	PetscScalar cc1 = 1.0, cc2 = 0.5;
 
-	// ============ part I: getting velocity gradient and pressure =============
+	MPI_Comm_rank(MPI_COMM_WORLD,&rank);
 
-	DMGetLocalVector	(da, &uvp_vec);
+	VecDuplicate(ptr_mk->sp_u,&panelu_vec);
+	VecDuplicate(ptr_mk->sp_u,&panelv_vec);
+	VecDuplicate(ptr_mk->sp_u,&panelax_vec);
+	VecDuplicate(ptr_mk->sp_u,&panelay_vec);
 
-	// u
-    DMGlobalToLocalBegin(da, ptr_f->u, INSERT_VALUES, uvp_vec);
-    DMGlobalToLocalEnd  (da, ptr_f->u, INSERT_VALUES, uvp_vec);
-    DMDAVecGetArray		(da, uvp_vec, &uvp_array);
+	VecWAXPY(panelu_vec, cc1, ptr_mk->sp_u, ptr_mk->ep_u);
+	VecWAXPY(panelv_vec, cc1, ptr_mk->sp_v, ptr_mk->ep_v);
+	VecWAXPY(panelax_vec, cc1, ptr_mk->sp_ax, ptr_mk->ep_ax);
+	VecWAXPY(panelay_vec, cc1, ptr_mk->sp_ay, ptr_mk->ep_ay);
 
-	VecGetArrayRead(ptr_mk->sp_u, &sx);
-	VecGetArrayRead(ptr_mk->ep_u, &ex);
+	VecScale(panelu_vec, cc2);
+	VecScale(panelv_vec, cc2);
+	VecScale(panelax_vec, cc2);
+	VecScale(panelay_vec, cc2);
 
-    list = &(ptr_f->flist_u);
-	for( id = 0; id<ptr_f->flist_u.total; id++){
+	VecGetArrayRead(panelu_vec, &panelu);
+	VecGetArrayRead(panelv_vec, &panelv);
+	VecGetArrayRead(panelax_vec, &panelax);
+	VecGetArrayRead(panelay_vec, &panelay);
 
-		i 	= list->data[id].i[0];
-		j 	= list->data[id].i[1];
-        tp1 = list->data[id].tp[0];
-        tp2 = list->data[id].tp[1];
-        i1 = i + offset2d[tp1].i;
-        j1 = j + offset2d[tp1].j;
-        i2 = i + offset2d[tp2].i;
-        j2 = j + offset2d[tp2].j;
-        panel = list->data[id].panel;
-        ratio = list->data[id].ratio;
+	VecGetArrayRead(ptr_mk->sp_x, &sx);
+	VecGetArrayRead(ptr_mk->sp_y, &sy);
+	VecGetArrayRead(ptr_mk->ep_x, &ex);
+	VecGetArrayRead(ptr_mk->ep_y, &ey);
 
-		interp_sten[0] = sx[panel]+ratio*(ex[panel]-sx[panel]); /// !!!!!!!!!!!!!!!!!!!!!!!! no velocity
-		interp_sten[1] = uvp_array[j1][i1];
-		interp_sten[2] = uvp_array[j2][i2];
+	VecGetArrayRead(ptr_mk->l0, &l0);
+	VecGetArrayRead(ptr_mk->tx, &tx);
+	VecGetArrayRead(ptr_mk->ty, &ty);
 
-        a[0] =  1; a[3] = list->data[id].surf[0]; a[6] = list->data[id].surf[1];
-        a[1] =  1; a[4] = ptr_f->x_grid[i1]; 	  a[7] = ptr_f->ym_grid[j1];
-        a[2] =  1; a[5] = ptr_f->x_grid[i2]; 	  a[8] = ptr_f->ym_grid[j2];
+	DMGetLocalVector(ptr_f->da, &u_vec);
+    DMGlobalToLocalBegin(ptr_f->da, ptr_f->u, INSERT_VALUES, u_vec);
+    DMGlobalToLocalEnd  (ptr_f->da, ptr_f->u, INSERT_VALUES, u_vec);
+    DMDAVecGetArrayRead (ptr_f->da, u_vec, &u_ary);
+
+	DMGetLocalVector(ptr_f->da, &v_vec);
+    DMGlobalToLocalBegin(ptr_f->da, ptr_f->v, INSERT_VALUES, v_vec);
+    DMGlobalToLocalEnd  (ptr_f->da, ptr_f->v, INSERT_VALUES, v_vec);
+    DMDAVecGetArrayRead (ptr_f->da, v_vec, &v_ary);
+
+	DMGetLocalVector(ptr_f->da, &p_vec);
+    DMGlobalToLocalBegin(ptr_f->da, ptr_f->p, INSERT_VALUES, p_vec);
+    DMGlobalToLocalEnd  (ptr_f->da, ptr_f->p, INSERT_VALUES, p_vec);
+    DMDAVecGetArrayRead (ptr_f->da, p_vec, &p_ary);
+
+	DMGetLocalVector(ptr_f->da, &du_vec);
+    DMGlobalToLocalBegin(ptr_f->da, ptr_f->dist_map_u, INSERT_VALUES, du_vec);
+    DMGlobalToLocalEnd  (ptr_f->da, ptr_f->dist_map_u, INSERT_VALUES, du_vec);
+    DMDAVecGetArrayRead (ptr_f->da, du_vec, &fpm_u_ary);
+
+	DMGetLocalVector(ptr_f->da, &dv_vec);
+    DMGlobalToLocalBegin(ptr_f->da, ptr_f->dist_map_v, INSERT_VALUES, dv_vec);
+    DMGlobalToLocalEnd  (ptr_f->da, ptr_f->dist_map_v, INSERT_VALUES, dv_vec);
+    DMDAVecGetArrayRead (ptr_f->da, dv_vec, &fpm_v_ary);
+
+	DMGetLocalVector(ptr_f->da, &dp_vec);
+    DMGlobalToLocalBegin(ptr_f->da, ptr_f->dist_map_p, INSERT_VALUES, dp_vec);
+    DMGlobalToLocalEnd  (ptr_f->da, ptr_f->dist_map_p, INSERT_VALUES, dp_vec);
+    DMDAVecGetArrayRead (ptr_f->da, dp_vec, &fpm_p_ary);
+
+	DMGetLocalVector(ptr_f->da, &fu_vec);
+    DMGlobalToLocalBegin(ptr_f->da, ptr_f->dist_u, INSERT_VALUES, fu_vec);
+    DMGlobalToLocalEnd  (ptr_f->da, ptr_f->dist_u, INSERT_VALUES, fu_vec);
+    DMDAVecGetArrayRead (ptr_f->da, fu_vec, &dst_u_ary);
+
+	DMGetLocalVector(ptr_f->da, &fv_vec);
+    DMGlobalToLocalBegin(ptr_f->da, ptr_f->dist_v, INSERT_VALUES, fv_vec);
+    DMGlobalToLocalEnd  (ptr_f->da, ptr_f->dist_v, INSERT_VALUES, fv_vec);
+    DMDAVecGetArrayRead (ptr_f->da, fv_vec, &dst_v_ary);
+
+	DMGetLocalVector(ptr_f->da, &fp_vec);
+    DMGlobalToLocalBegin(ptr_f->da, ptr_f->dist_p, INSERT_VALUES, fp_vec);
+    DMGlobalToLocalEnd  (ptr_f->da, ptr_f->dist_p, INSERT_VALUES, fp_vec);
+    DMDAVecGetArrayRead (ptr_f->da, fp_vec, &dst_p_ary);
+
+	VecZeroEntries(ptr_s->traction);
+
+	for( loc_panel = 0; loc_panel<ptr_mk->nlocal_f;loc_panel++)
+	{
+		mp[0] = (sx[loc_panel] + ex[loc_panel])/2; //midpoint of the panel
+        mp[1] = (sy[loc_panel] + ey[loc_panel])/2;
+        panel = ptr_mk->list_f[loc_panel];
+
+        lratio = sqrt((sx[loc_panel]-ex[loc_panel])*(sx[loc_panel]-ex[loc_panel])
+      			 +(sy[loc_panel]-ey[loc_panel])*(sy[loc_panel]-ey[loc_panel]))/l0[panel];
+        nx = ptr_mk->nx[loc_panel];
+        ny = ptr_mk->ny[loc_panel];
+        /*
+        // u gradient
+        pan_i = floor((mp[0]-ptr_f->x_grid[0])/ptr_f->dx );
+        pan_j = floor((mp[1]-ptr_f->y_grid[0])/ptr_f->dx -0.5);
+
+        count = 0;
+        for (i = pan_i-1; i<= pan_i+2; i++)
+        	 for (j = pan_j-1; j<= pan_j+2; j++)
+        	 {
+        		 printf("%d %d %d %d\n",rank,panel,i,j);
+        		 if (dst_u_ary[j][i]>0 && fpm_u_ary[j][i] == 0){
+        	    	 dist_list[count].i = i;
+        	    	 dist_list[count].j = j;
+        	       	 dist_list[count].d = sqrt((ptr_f->x_grid[i]-mp[0])*(ptr_f->x_grid[i]-mp[0])
+        	       			 +(ptr_f->ym_grid[j]-mp[1])*(ptr_f->ym_grid[j]-mp[1]));
+        	         count ++;
+        	     }
+        		 printf("%d\n",count);
+        	 }
+
+        qsort(dist_list, count, sizeof(dist_t), (compfn)comp_distance);
+
+        ii1 = dist_list[0].i;  jj1 = dist_list[0].j;
+        ii2 = dist_list[1].i;  jj2 = dist_list[1].j;
+
+        //choose two nearest fluid points
+        a[0] = 1; a[3] = mp[0];  a[6] = mp[1];
+        a[1] = 1; a[4] = ptr_f->x_grid[ii1];  a[7] = ptr_f->ym_grid[jj1];
+        a[2] = 1; a[5] = ptr_f->x_grid[ii2];  a[8] = ptr_f->ym_grid[jj2];
 
         PetscKernel_A_gets_inverse_A_3(a,0.0);
-        A_times_b_3x3(a,interp_sten,c);
 
-        par_ux[id]=c[1];  par_uy[id]=c[2];
+        b[0] = panelu[loc_panel];
+        b[1] = u_ary[jj1][ii1];
+        b[2] = u_ary[jj2][ii2];
 
+        A_times_b_3x3(a,b,c);
+        ux = c[1]; uy = c[2];
+
+
+        // v gradient
+        pan_i = floor((mp[0]-ptr_f->x_grid[0])/ptr_f->dx -0.5);
+        pan_j = floor((mp[1]-ptr_f->y_grid[0])/ptr_f->dx );
+
+        printf("%d %d %d %d\n",rank,  panel, pan_i,pan_j);
+
+        count = 0;
+        for (i = pan_i-1; i<= pan_i+2; i++)
+        	 for (j = pan_j-1; j<= pan_j+2; j++)
+        	 {
+        	     if (dst_v_ary[j][i]>0 && fpm_v_ary[j][i] == 0){
+        	    	 dist_list[count].i = i;
+        	    	 dist_list[count].j = j;
+        	       	 dist_list[count].d = sqrt((ptr_f->xm_grid[i]-mp[0])*(ptr_f->xm_grid[i]-mp[0])
+        	       			 +(ptr_f->y_grid[j]-mp[1])*(ptr_f->y_grid[j]-mp[1]));
+        	         count ++;
+        	     }
+        	 }
+
+        qsort(dist_list, count, sizeof(dist_t), (compfn)comp_distance);
+
+        ii1 = dist_list[0].i;  jj1 = dist_list[0].j;
+        ii2 = dist_list[1].i;  jj2 = dist_list[1].j;
+        //choose two nearest fluid points
+        a[0] = 1; a[3] = mp[0];  a[6] = mp[1];
+        a[1] = 1; a[4] = ptr_f->xm_grid[ii1];  a[7] = ptr_f->y_grid[jj1];
+        a[2] = 1; a[5] = ptr_f->xm_grid[ii2];  a[8] = ptr_f->y_grid[jj2];
+
+        PetscKernel_A_gets_inverse_A_3(a,0.0);
+
+        b[0] = panelv[loc_panel];
+        b[1] = v_ary[jj1][ii1];
+        b[2] = v_ary[jj2][ii2];
+
+        A_times_b_3x3(a,b,c);
+        vx = c[1]; vy = c[2];
+        */
+        if (rank == 0){
+        // p gradient
+        pan_i = floor((mp[0]-ptr_f->x_grid[0])/ptr_f->dx -0.5);
+        pan_j = floor((mp[1]-ptr_f->y_grid[0])/ptr_f->dx -0.5);
+
+        count = 0;
+        for (i = pan_i-1; i<= pan_i+2; i++)
+        	 for (j = pan_j-1; j<= pan_j+2; j++)
+        	 {
+        	     printf("rank %d %d %d %d\n", rank, panel,i,j );
+        		 if (dst_p_ary[j][i]>0 && fpm_p_ary[j][i] == 0){
+        	    	 dist_list[count].i = i;
+        	    	 dist_list[count].j = j;
+        	       	 dist_list[count].d = sqrt((ptr_f->xm_grid[i]-mp[0])*(ptr_f->xm_grid[i]-mp[0])
+        	       			 +(ptr_f->ym_grid[j]-mp[1])*(ptr_f->ym_grid[j]-mp[1]));
+        	         count ++;
+        	     }
+        	 }
+
+        qsort(dist_list, count, sizeof(dist_t), (compfn)comp_distance);
+
+        ii1 = dist_list[0].i;  jj1 = dist_list[0].j;
+        ii2 = dist_list[1].i;  jj2 = dist_list[1].j;
+
+        // choose two nearest fluid points
+        a[0] = 0; a[3] = nx;  a[6] = ny;
+        a[1] = 1; a[4] = ptr_f->xm_grid[ii1];  a[7] = ptr_f->ym_grid[jj1];
+        a[2] = 1; a[5] = ptr_f->xm_grid[ii2];  a[8] = ptr_f->ym_grid[jj2];
+
+
+        PetscKernel_A_gets_inverse_A_3(a,0.0);
+
+        b[0] = -panelax[loc_panel]*nx -panelay[loc_panel]*ny ;
+        b[1] = p_ary[jj1][ii1];
+        b[2] = p_ary[jj2][ii2];
+
+        A_times_b_3x3(a,b,c);
+        pp = c[0] + mp[0]*c[1]+mp[1]*c[2] - ref_pressure;
+
+        // calculating traction
+        id_t[0] = (int)tx[panel];
+        id_t[1] = (int)ty[panel];
+
+        printf(" %d %d\n", id_t[0], id_t[1]);
+
+        /*
+        trac[0] = (-pp*nx + (nx*2*ux + ny*( vx + uy)/ptr_f->reynolds_number))*lratio;
+        trac[1] = (-pp*ny + (ny*2*vy + nx*( vx + uy)/ptr_f->reynolds_number))*lratio;
+
+        //VecSetValues(ptr_s->traction,2,id_t,trac, ADD_VALUES);
+		*/
+        }
 	}
-	DMDAVecRestoreArray		(da, uvp_vec, &uvp_array);
 
-	VecRestoreArrayRead(ptr_mk->sp_u, &sx);
-	VecRestoreArrayRead(ptr_mk->ep_u, &ex);
+	VecAssemblyBegin(ptr_s->traction);
+	VecAssemblyEnd	(ptr_s->traction);
 
-	// v
-    DMGlobalToLocalBegin(da, ptr_f->v, INSERT_VALUES, uvp_vec);
-    DMGlobalToLocalEnd  (da, ptr_f->v, INSERT_VALUES, uvp_vec);
-    DMDAVecGetArray		(da, uvp_vec, &uvp_array);
+	VecRestoreArrayRead(ptr_mk->l0, &l0);
+	VecRestoreArrayRead(ptr_mk->tx, &tx);
+	VecRestoreArrayRead(ptr_mk->ty, &ty);
 
-	VecGetArrayRead(ptr_mk->sp_v, &sy);
-	VecGetArrayRead(ptr_mk->ep_v, &ey);
+	DMDAVecRestoreArrayRead(ptr_f->da,u_vec, &u_ary);
+	DMDAVecRestoreArrayRead(ptr_f->da,v_vec, &v_ary);
+	DMDAVecRestoreArrayRead(ptr_f->da,p_vec, &p_ary);
 
-    list = &(ptr_f->flist_v);
-	for( id = 0; id<ptr_f->flist_v.total; id++){
+	DMDAVecRestoreArrayRead(ptr_f->da,du_vec, &fpm_u_ary);
+	DMDAVecRestoreArrayRead(ptr_f->da,dv_vec, &fpm_v_ary);
+	DMDAVecRestoreArrayRead(ptr_f->da,dp_vec, &fpm_p_ary);
 
-		i 	= list->data[id].i[0];
-		j 	= list->data[id].i[1];
-        tp1 = list->data[id].tp[0];
-        tp2 = list->data[id].tp[1];
-        i1 = i + offset2d[tp1].i;
-        j1 = j + offset2d[tp1].j;
-        i2 = i + offset2d[tp2].i;
-        j2 = j + offset2d[tp2].j;
-        panel = list->data[id].panel;
-        ratio = list->data[id].ratio;
+	DMDAVecRestoreArrayRead(ptr_f->da,fu_vec, &dst_u_ary);
+	DMDAVecRestoreArrayRead(ptr_f->da,fv_vec, &dst_v_ary);
+	DMDAVecRestoreArrayRead(ptr_f->da,fp_vec, &dst_p_ary);
 
-		interp_sten[0] = sy[panel]+ratio*(ey[panel]-sy[panel]); /// !!!!!!!!!!!!!!!!!!!!!!!! no velocity !
-		interp_sten[1] = uvp_array[j1][i1];
-		interp_sten[2] = uvp_array[j2][i2];
-
-        a[0] =  1; a[3] = list->data[id].surf[0]; a[6] = list->data[id].surf[1];
-        a[1] =  1; a[4] = ptr_f->xm_grid[i1]; 	  a[7] = ptr_f->y_grid[j1];
-        a[2] =  1; a[5] = ptr_f->xm_grid[i2]; 	  a[8] = ptr_f->y_grid[j2];
-
-        PetscKernel_A_gets_inverse_A_3(a,0.0);
-        A_times_b_3x3(a,interp_sten,c);
-
-        par_vx[id]=c[1];  par_vy[id]=c[2];
-
-	}
-	DMDAVecRestoreArray		(da, uvp_vec, &uvp_array);
-
-	VecRestoreArrayRead(ptr_mk->sp_v, &sy);
-	VecRestoreArrayRead(ptr_mk->ep_v, &ey);
-
-	// p
-
-    DMGlobalToLocalBegin(da, ptr_f->p, INSERT_VALUES, uvp_vec);
-    DMGlobalToLocalEnd  (da, ptr_f->p, INSERT_VALUES, uvp_vec);
-    DMDAVecGetArray		(da, uvp_vec, &uvp_array);
-
-	VecGetArrayRead(ptr_mk->sp_ax, &sx);
-	VecGetArrayRead(ptr_mk->ep_ax, &ex);
-	VecGetArrayRead(ptr_mk->sp_ay, &sy);
-	VecGetArrayRead(ptr_mk->ep_ay, &ey);
-
-    for( id = 0; id<ptr_f->flist_p.total; id++){
-
-		i 	= list->data[id].i[0];
-		j 	= list->data[id].i[1];
-        tp1 = list->data[id].tp[0];
-        tp2 = list->data[id].tp[1];
-        i1 = i + offset2d[tp1].i;
-        j1 = j + offset2d[tp1].j;
-        i2 = i + offset2d[tp2].i;
-        j2 = j + offset2d[tp2].j;
-        panel = list->data[id].panel;
-        ratio = list->data[id].ratio;
-
-		interp_sten[0] = -list->data[id].n[0]*(sx[panel]+ratio*(ex[panel]-sx[panel]))
-						 -list->data[id].n[1]*(sy[panel]+ratio*(ey[panel]-sy[panel])); /// !!!!!!!!!!!!!!!!!!!!!!!! no acceleration
-		interp_sten[1] = uvp_array[j1][i1];
-		interp_sten[2] = uvp_array[j2][i2];
-
-        a[0] =  0; a[3] = list->data[id].n[0]; 	  a[6] = list->data[id].n[1];
-        a[1] =  1; a[4] = ptr_f->xm_grid[i1]; 	  a[7] = ptr_f->ym_grid[j1];
-        a[2] =  1; a[5] = ptr_f->xm_grid[i2]; 	  a[8] = ptr_f->ym_grid[j2];
-
-        PetscKernel_A_gets_inverse_A_3(a,0.0);
-    	A_times_b_3x3(a,interp_sten,c);
-
-    	pressure[id]=c[0]+ptr_f->xm_grid[i]*c[1]+ptr_f->ym_grid[j]*c[2];
-    }
-    DMDAVecRestoreArray		(da, uvp_vec, &uvp_array);
-	DMRestoreLocalVector	(da, &uvp_vec);
+	VecRestoreArrayRead(panelu_vec, &panelu);
+	VecRestoreArrayRead(panelv_vec, &panelv);
+	VecRestoreArrayRead(panelax_vec, &panelax);
+	VecRestoreArrayRead(panelay_vec, &panelay);
 
 	VecRestoreArrayRead(ptr_mk->sp_ax, &sx);
 	VecRestoreArrayRead(ptr_mk->ep_ax, &ex);
 	VecRestoreArrayRead(ptr_mk->sp_ay, &sy);
 	VecRestoreArrayRead(ptr_mk->ep_ay, &ey);
 
-	// ================== part II: calculate traction on traction cell ===========
-
-	int			ii;
-	int			id_t, comp;
-	short int	*C2c_neumann;
-	double 		ref_pressure = 0, *traction_cell, *n;
-	Vec			trac_n_vec,trac_temp_vec,trac_check_vec,trac_checktot_vec;
-	PetscScalar cc;
-
-	VecView(ptr_s->traction,PETSC_VIEWER_STDOUT_WORLD);
-
-	VecDuplicate(ptr_s->traction, &trac_n_vec);
-	VecDuplicate(ptr_s->traction, &trac_temp_vec);
-	VecDuplicate(ptr_s->traction, &trac_check_vec);
-	VecDuplicate(ptr_s->traction, &trac_checktot_vec);
-
-	VecSet(trac_n_vec		,0.0);
-	VecSet(trac_temp_vec	,0.0);
-	VecSet(trac_check_vec	,0.0);
-	VecSet(trac_checktot_vec,0.0);
-
-	// du/dx du/dy part for tx
-	for( ii = 0; ii<ptr_f->flist_u.total; ii++){
-
-		id 		= ptr_f->flist_u.data[ii].panel;
-		id_t 	= ptr_mk->tx[id];
-
-		//printf("id,id_t %d %d \n",id,id_t);
-		cc = 1;
-		VecSetValue(trac_n_vec,		id_t,cc, ADD_VALUES);
-		VecSetValue(trac_check_vec,	id_t,cc, INSERT_VALUES );
-
-		cc = 2*par_ux[ii]*ptr_mk->nx[id] + par_uy[ii]*ptr_mk->ny[id];
-		VecSetValue(trac_temp_vec,	id_t,cc, ADD_VALUES);
-	}
-
-	// du/dy part for ty
-	for( ii = 0; ii<ptr_f->flist_u.total; ii++){
-
-		id 		= ptr_f->flist_u.data[ii].panel;
-		id_t 	= ptr_mk->ty[id];
-
-		cc = 1;
-		VecSetValue(trac_n_vec,		id_t,cc, ADD_VALUES);
-		VecSetValue(trac_check_vec,	id_t,cc, INSERT_VALUES );
-
-		cc = par_uy[ii]*ptr_mk->nx[id];
-		VecSetValue(trac_temp_vec,	id_t,cc, ADD_VALUES);
-	}
-
-	VecAssemblyBegin(trac_n_vec);
-	VecAssemblyEnd	(trac_n_vec);
-
-	VecAssemblyBegin(trac_check_vec);
-	VecAssemblyEnd	(trac_check_vec);
-
-	VecAssemblyBegin(trac_temp_vec);
-	VecAssemblyEnd	(trac_temp_vec);
-
-	VecPointwiseDivide(trac_temp_vec,trac_temp_vec,trac_n_vec);
-	VecCopy(trac_temp_vec, ptr_s->traction);
-
-	cc = 1;
-	VecAXPY(trac_checktot_vec,cc,trac_check_vec);
-
-	VecSet(trac_n_vec		,0.0);
-	VecSet(trac_temp_vec	,0.0);
-	VecSet(trac_check_vec	,0.0);
-
-	// dv/dx part for tx
-	for( ii = 0; ii<ptr_f->flist_v.total; ii++){
-
-		id 		= ptr_f->flist_v.data[ii].panel;
-		id_t 	= ptr_mk->tx[id];
-
-		cc = 1;
-		VecSetValue(trac_n_vec,		id_t,cc, ADD_VALUES);
-		VecSetValue(trac_check_vec,	id_t,cc, INSERT_VALUES );
-
-		cc = par_vx[ii]*ptr_mk->ny[id];
-		VecSetValue(trac_temp_vec,	id_t,cc, ADD_VALUES);
-	}
-
-	// dv/dx, dv/dy part for ty
-	for( ii = 0; ii<ptr_f->flist_v.total; ii++){
-
-		id 		= ptr_f->flist_v.data[ii].panel;
-		id_t 	= ptr_mk->ty[id];
-
-		cc = 1;
-		VecSetValue(trac_n_vec,		id_t,cc, ADD_VALUES);
-		VecSetValue(trac_check_vec,	id_t,cc, INSERT_VALUES );
-
-		cc = 2*par_vy[ii]*ptr_mk->ny[id] + par_vx[ii]*ptr_mk->nx[id];
-		VecSetValue(trac_temp_vec,	id_t,cc, ADD_VALUES);
-	}
-
-	VecAssemblyBegin(trac_n_vec);
-	VecAssemblyEnd	(trac_n_vec);
-
-	VecAssemblyBegin(trac_check_vec);
-	VecAssemblyEnd	(trac_check_vec);
-
-	VecAssemblyBegin(trac_temp_vec);
-	VecAssemblyEnd	(trac_temp_vec);
-
-	VecPointwiseDivide(trac_temp_vec,trac_temp_vec,trac_n_vec);
-	cc = 1.0;
-	VecAXPY(trac_temp_vec,cc,ptr_s->traction);
-	VecAXPY(trac_checktot_vec,cc,trac_check_vec);
-
-	cc = 1/ptr_f->reynolds_number;
-	VecScale(ptr_s->traction, cc);
-
-	// pressure part
-	VecSet(trac_n_vec		,0.0);
-	VecSet(trac_temp_vec	,0.0);
-	VecSet(trac_check_vec	,0.0);
-
-	// for tx
-	for( ii = 0; ii<ptr_f->flist_p.total; ii++){
-
-		id 		= ptr_f->flist_p.data[ii].panel;
-		id_t 	= ptr_mk->tx[id];
-
-		cc = 1;
-		VecSetValue(trac_n_vec,		id_t,cc, ADD_VALUES);
-		VecSetValue(trac_check_vec,	id_t,cc, INSERT_VALUES );
-
-		cc = -(pressure[id])*ptr_mk->nx[id];
-		VecSetValue(trac_temp_vec,	id_t,cc, ADD_VALUES);
-	}
-
-	for( ii = 0; ii<ptr_f->flist_p.total; ii++){
-
-		id 		= ptr_f->flist_p.data[ii].panel;
-		id_t 	= ptr_mk->ty[id];
-
-		cc = 1;
-		VecSetValue(trac_n_vec,		id_t,cc, ADD_VALUES);
-		VecSetValue(trac_check_vec,	id_t,cc, INSERT_VALUES );
-
-		cc = -(pressure[id])*ptr_mk->ny[id];
-		VecSetValue(trac_temp_vec,	id_t,cc, ADD_VALUES);
-	}
-
-	VecAssemblyBegin(trac_n_vec);
-	VecAssemblyEnd	(trac_n_vec);
-
-	VecAssemblyBegin(trac_check_vec);
-	VecAssemblyEnd	(trac_check_vec);
-
-	VecAssemblyBegin(trac_temp_vec);
-	VecAssemblyEnd	(trac_temp_vec);
-
-	VecPointwiseDivide(trac_temp_vec,trac_temp_vec,trac_n_vec);
-	cc = 1.0;
-	VecAXPY(trac_temp_vec,cc,ptr_s->traction);
-	VecAXPY(trac_checktot_vec,cc,trac_check_vec);
-
-	// treatment of boundary cell with no velocity gradients or pressure
-
+	VecDestroy(&panelu_vec); VecDestroy(&panelv_vec); VecDestroy(&panelax_vec); VecDestroy(&panelay_vec);
 
 }
 
-static int forcing_pts_list_init(forcing_point_list_t *list)
+int forcing_pts_list_init(forcing_point_list_t *list)
 {
     list->total = 0; /* no element */
     list->max   = 1; /* this is arbitrarily chosen */
@@ -1582,7 +1810,7 @@ void A_times_b_3x3(double *a, double *b, double *c)
 
 }
 
-void displacement_interpolation(Lag_marker* ptr_mk, Index_S* ptr_i, Grid_S* ptr_g ){ // 11/13/2015 by Peggy
+void disp_interp_setup(Lag_marker* ptr_mk, Index_S* ptr_i, Grid_S* ptr_g ){ // 11/13/2015 by Peggy
 
 	double		dx = ptr_g->dx, dx2 = dx/2;
 	double		c1, c2, xx, yy;

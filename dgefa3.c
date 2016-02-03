@@ -28,27 +28,27 @@ PETSC_EXTERN PetscErrorCode PetscKernel_A_gets_inverse_A_3(MatScalar *a,PetscRea
 		kp1 = k + 1;
 		k3  = 3*k;
 		k4  = k3 + k;
+
 		/*        find l = pivot index */
-
 		i__2 = 4 - k;
-	     aa   = &a[k4];
-	     max  = PetscAbsScalar(aa[0]);
-	     l    = 1;
-	     for (ll=1; ll<i__2; ll++) {
-	       tmp = PetscAbsScalar(aa[ll]);
-	       if (tmp > max) { max = tmp; l = ll+1;}
-	     }
-	     l        += k - 1;
-	     ipvt[k-1] = l;
+	    aa   = &a[k4];
+	    max  = PetscAbsScalar(aa[0]);
+	    l    = 1;
+	    for (ll=1; ll<i__2; ll++) {
+	      tmp = PetscAbsScalar(aa[ll]);
+	      if (tmp > max) { max = tmp; l = ll+1;}
+	    }
+	    l        += k - 1;
+	    ipvt[k-1] = l;
 
-	     if (a[l + k3] == 0.0) {
-	       if (shift == 0.0) SETERRQ1(PETSC_COMM_SELF,PETSC_ERR_MAT_LU_ZRPVT,"Zero pivot, row %D",k-1);
-	       else {
-	         /* Shift is applied to single diagonal entry */
-	         a[l + k3] = shift;
-	       }
-	     }
-	 /*           interchange if necessary */
+	    if (a[l + k3] == 0.0) {
+	      if (shift == 0.0) SETERRQ1(PETSC_COMM_SELF,PETSC_ERR_MAT_LU_ZRPVT,"Zero pivot, row %D",k-1);
+	      else {
+	      /* Shift is applied to single diagonal entry */
+	      a[l + k3] = shift;
+	      }
+	    }
+	 /* interchange if necessary */
 
 	     if (l != k) {
 	       stmp      = a[l + k3];
@@ -56,14 +56,14 @@ PETSC_EXTERN PetscErrorCode PetscKernel_A_gets_inverse_A_3(MatScalar *a,PetscRea
 	       a[k4]     = stmp;
 	     }
 
-	 /*           compute multipliers */
+	 /* compute multipliers */
 
 	     stmp = -1. / a[k4];
 	     i__2 = 3 - k;
 	     aa   = &a[1 + k4];
 	     for (ll=0; ll<i__2; ll++) aa[ll] *= stmp;
 
-	/*           row elimination with column indexing */
+	/* row elimination with column indexing */
 
 	    ax = &a[k4+1];
 	    for (j = kp1; j <= 3; ++j) {
@@ -86,7 +86,7 @@ PETSC_EXTERN PetscErrorCode PetscKernel_A_gets_inverse_A_3(MatScalar *a,PetscRea
 	        Now form the inverse
 	   */
 
-	   /*     compute inverse(u) */
+	   /*   compute inverse(u) */
 
 	   for (k = 1; k <= 3; ++k) {
 	    k3    = 3*k;

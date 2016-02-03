@@ -189,18 +189,21 @@ int main(int argc,char **argv)
     // set up interface markers
 
     marker_setup(&grid, &solid, &ind, &marker, &user); // should be after reduce_system
-    displacement_interpolation(&marker, &ind, &grid );
+    list_setup  (&marker, &fluid);
+    disp_interp_setup(&marker, &ind, &grid );
 
     // ================ Setting Scattering ==========================
 
     setScattering(&user, &ind, field_s.xi);
 
-    build_current_marker(&marker, &field_s, &ind, &user);
+    build_current_marker(&marker, &field_s, &fluid, &ind, &user);
+
 	update_sdf (&grid, &marker, &user, &fluid);
 
 	ib_find_forcing_pts_2d (&fluid, &marker);
 
 	apply_forcing_2d(&fluid, 1.0);
+
 	printf("works!");
 	force_calculation(&ind, &fluid, &field_s, &marker);
 

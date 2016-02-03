@@ -27,7 +27,7 @@ void set_initial(Index_S* ptr_i, Solid* ptr_s, Field_S* ptr_fs)
 
     if (strcmp(ptr_s->initial,"specified")==0)
     {
-        VecSet(ptr_fs->xi,0.03);
+        VecSet(ptr_fs->xi,0.06);
         VecSet(ptr_fs->dxi,0.0);
         VecSet(ptr_fs->ddxi,0.0);
     }
