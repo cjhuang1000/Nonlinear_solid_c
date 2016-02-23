@@ -6,11 +6,11 @@
 #include <math.h>
 #include "nrutil.h"
 
-void set_grid 		(Grid_S* g);
-void set_constraint	(Constraint_S *c,Grid_S* g,char bc);
-void set_processor	(Grid_S* ptr_g, AppCtx* ptr_u);
+void set_grid 		(Field_S* s);
+void set_constraint	(Field_S* s,char bc);
+void set_processor	(Field_S* s, AppCtx* ptr_u);
 
-void user_param (Grid_S* ptr_g, Solid* ptr_s, TimeMarching* ptr_t,Constraint_S* ptr_c, AppCtx* ptr_u)
+void user_param (Field_S* s, AppCtx* ptr_u)
 {
 
 	int		solid_resolution	= 10;
@@ -37,96 +37,96 @@ void user_param (Grid_S* ptr_g, Solid* ptr_s, TimeMarching* ptr_t,Constraint_S* 
 	int		i,j;
 
 	/* setting grid information*/
-	ptr_g->char_lengh	= char_length;
-	ptr_g->domain_x[0]	= domain[0];
-	ptr_g->domain_x[1]	= domain[1];
-	ptr_g->domain_y[0]	= domain[2];
-	ptr_g->domain_y[1]	= domain[3];
+	s->char_lengh	= char_length;
+	s->domain_x[0]	= domain[0];
+	s->domain_x[1]	= domain[1];
+	s->domain_y[0]	= domain[2];
+	s->domain_y[1]	= domain[3];
 
-	ptr_g->domain_size[0] = domain[1]-domain[0];
-	ptr_g->domain_size[1] = domain[3]-domain[2];
+	s->domain_size[0] = domain[1]-domain[0];
+	s->domain_size[1] = domain[3]-domain[2];
 
-	ptr_g->res = solid_resolution;
+	s->res = solid_resolution;
 
-	if (ptr_g->domain_size[0] > ptr_g->domain_size[1])
-		ptr_g->dx = ptr_g->domain_size[1]/solid_resolution;
+	if (s->domain_size[0] > s->domain_size[1])
+		s->dx = s->domain_size[1]/solid_resolution;
 	else
-		ptr_g->dx = ptr_g->domain_size[0]/solid_resolution;
-	set_grid(ptr_g);
+		s->dx = s->domain_size[0]/solid_resolution;
+	set_grid(s);
 
 	/* setting structure information*/
-	ptr_s->length			= char_length;
-	ptr_s->rho				= density;
-	ptr_s->lambda			= E*nu/(1.0+nu)/(1.0-2.0*nu);
-	ptr_s->mu				= E/2.0/(1.0+nu);
-	ptr_s->threshold		= solid_threshold;
-	strcpy( ptr_s->type, shape);
-	strcpy( ptr_s->initial, initial);
-	ptr_s->boundcond 		= boundarycondition;
-	ptr_s->damping[0] 		= damping[0];
-	ptr_s->damping[1] 		= damping[1];
-	ptr_s->boundary_value 	= dmatrix(0,ptr_g->Nx-1,0,ptr_g->Ny-1);
-	ptr_s->boundary_sign  	= imatrix(0,ptr_g->Nx-1,0,ptr_g->Ny-1);
+	s->param.length			= char_length;
+	s->param.rho				= density;
+	s->param.lambda			= E*nu/(1.0+nu)/(1.0-2.0*nu);
+	s->param.mu				= E/2.0/(1.0+nu);
+	s->param.threshold		= solid_threshold;
+	strcpy( s->param.type, shape);
+	strcpy( s->param.initial, initial);
+	s->param.boundcond 		= boundarycondition;
+	s->param.damping[0] 		= damping[0];
+	s->param.damping[1] 		= damping[1];
+	s->param.boundary_value 	= dmatrix(0,s->Nx-1,0,s->Ny-1);
+	s->param.boundary_sign  	= imatrix(0,s->Nx-1,0,s->Ny-1);
 
-	set_sdf(ptr_s, 0,ptr_g->Nx, 0, ptr_g->Ny, ptr_g->x_grid, ptr_g->y_grid, ptr_s->boundary_value);				// set sdf
+	set_sdf(s, 0,s->Nx, 0, s->Ny, s->x_grid, s->y_grid, s->param.boundary_value);				// set sdf
 
-	for(i=0; i<ptr_g->Nx; i++)
-		for(j=0; j<ptr_g->Ny; j++)
-			ptr_s->boundary_sign[i][j] = (int)((ptr_s->boundary_value[i][j] > 0) - (ptr_s->boundary_value[i][j] < 0));
+	for(i=0; i<s->Nx; i++)
+		for(j=0; j<s->Ny; j++)
+			s->param.boundary_sign[i][j] = (int)((s->param.boundary_value[i][j] > 0) - (s->param.boundary_value[i][j] < 0));
 
 	/* setting time marching information*/
-	ptr_t->initial	= 0;
-	ptr_t->dt		= timestep;
-	ptr_t->nstep	= (int) ceil(finaltime/timestep);
-	ptr_t->nstep_output	= plot_per_steps;
-	ptr_t->delta	= 0.5;
-	ptr_t->theta	= Newmark_theta;
+	s->time.initial	= 0;
+	s->time.dt		= timestep;
+	s->time.nstep	= (int) ceil(finaltime/timestep);
+	s->time.nstep_output	= plot_per_steps;
+	s->time.delta	= 0.5;
+	s->time.theta	= Newmark_theta;
 
 	/* setting constraint of*/
-	set_constraint(ptr_c,ptr_g,boundarycondition);
+	set_constraint(s,boundarycondition);
 
 	//
-	PetscMalloc1(ptr_g->N,&ptr_u->v2p);
-	set_processor(ptr_g, ptr_u);
+	PetscMalloc1(s->N,&s->v2p);
+	set_processor(s, ptr_u);
 }
 
 
-void set_grid(Grid_S* g){
+void set_grid(Field_S* s){
 
 	int i;
 	int n;
-	double dx = g->dx;
+	double dx = s->dx;
 
-	g->Nx = (int) floor((double)g->domain_size[0]/dx)+1;
-	g->Ny = (int) floor((double)g->domain_size[1]/dx)+1;
-	g->N  = g->Nx*g->Ny;
+	s->Nx = (int) floor((double)s->domain_size[0]/dx)+1;
+	s->Ny = (int) floor((double)s->domain_size[1]/dx)+1;
+	s->N  = s->Nx*s->Ny;
 
-	g->x_grid = dvector(0,g->Nx-1);
-	g->y_grid = dvector(0,g->Ny-1);
+	s->x_grid = dvector(0,s->Nx-1);
+	s->y_grid = dvector(0,s->Ny-1);
 
 	/* setting the x- y- coordinates of the grid*/
-	for(i=0; i<g->Nx; i++)
-		g->x_grid[i] = g->domain_x[0] + i*dx;
+	for(i=0; i<s->Nx; i++)
+		s->x_grid[i] = s->domain_x[0] + i*dx;
 
-	for(i=0; i<g->Ny; i++)
-		g->y_grid[i] = g->domain_y[0] + i*dx;
+	for(i=0; i<s->Ny; i++)
+		s->y_grid[i] = s->domain_y[0] + i*dx;
 
 }
 
 /* compute the sdf of the solid*/
-void set_sdf(Solid* s, int mi, int mf, int ni, int nf, double* x, double* y, double** sdf){
+void set_sdf(Field_S* s, int mi, int mf, int ni, int nf, double* x, double* y, double** sdf){
 
 	int		i,j;
 	double	center_x,center_y,r,hl_ratio,Lx,Ly;
 
 	// Calculate the siged distance function on each grid point
 	// Need to specify the shape parameter
-	if(strcmp(s->type, "Beam")==0){
+	if(strcmp(s->param.type, "Beam")==0){
 
 		center_x = 0;
 		center_y = 0;
 		hl_ratio = 1;
-		Lx = s->length;
+		Lx = s->param.length;
 		Ly = Lx*hl_ratio;
 
 		for(i=mi;i<mf;i++)
@@ -136,7 +136,7 @@ void set_sdf(Solid* s, int mi, int mf, int ni, int nf, double* x, double* y, dou
                 DMIN( (y[j]-center_y)+ Ly/2,  Ly/2 - (y[j]-center_y) ) );
 
 	}
-	else if (strcmp(s->type, "Disk")==0){
+	else if (strcmp(s->param.type, "Disk")==0){
 
 		center_x = 0.0;
 		center_y = 0.0;
@@ -151,87 +151,87 @@ void set_sdf(Solid* s, int mi, int mf, int ni, int nf, double* x, double* y, dou
 		printf("Please enter a new shape of solid");
 }
 
-void set_constraint(Constraint_S *c,Grid_S* g,char bc){
+void set_constraint(Field_S* s,char bc){
 
-	int		m = g->Nx,n = g->Ny;
+	int		m = s->Nx,n = s->Ny;
 	int		i,j;
 	int		toln = m*n;
 
 	// body force
-	c->body_funct_x = dvector(0,toln-1);
-	c->body_funct_y = dvector(0,toln-1);
+	s->con.body_funct_x = dvector(0,toln-1);
+	s->con.body_funct_y = dvector(0,toln-1);
 
 	for(i=0; i<m; i++)
 		for(j=0;j<n;j++){
-			c->body_funct_x[j*m+i]=0;
-			c->body_funct_y[j*m+i]=0;
+			s->con.body_funct_x[j*m+i]=0;
+			s->con.body_funct_y[j*m+i]=0;
 		}
 
 	// fsi force
-	c->fsi_func_x = dvector(0,toln-1);
-	c->fsi_func_y = dvector(0,toln-1);
+	s->con.fsi_func_x = dvector(0,toln-1);
+	s->con.fsi_func_y = dvector(0,toln-1);
 
 	for(i=0; i<m; i++)
 		for(j=0;j<n;j++){
-			c->fsi_func_x[j*m+i]=0;
-			c->fsi_func_y[j*m+i]=0;
+			s->con.fsi_func_x[j*m+i]=0;
+			s->con.fsi_func_y[j*m+i]=0;
 		}
 
 	// Neumann
-	c->neumann_funct_x = dvector(0,toln-1);
-	c->neumann_funct_y = dvector(0,toln-1);
+	s->con.neumann_funct_x = dvector(0,toln-1);
+	s->con.neumann_funct_y = dvector(0,toln-1);
 
 	for(i=0; i<m; i++)
 		for(j=0;j<n;j++){
 			// uni-direction
-			if ((g->y_grid[j]) > 0.3)
-				c->neumann_funct_x[j*m+i]=1.0;
-			else if ((g->y_grid[j]) < -0.3)
-				c->neumann_funct_x[j*m+i]=-1.0;
+			if ((s->y_grid[j]) > 0.3)
+				s->con.neumann_funct_x[j*m+i]=1.0;
+			else if ((s->y_grid[j]) < -0.3)
+				s->con.neumann_funct_x[j*m+i]=-1.0;
 			else
-				c->neumann_funct_x[j*m+i]=0;
+				s->con.neumann_funct_x[j*m+i]=0;
 
 			// zero force
-			c->neumann_funct_y[j*m+i]=0;
-			//c->fsi_func_y[j*m+i]=0;
+			s->con.neumann_funct_y[j*m+i]=0;
+			//s->con.fsi_func_y[j*m+i]=0;
 		}
 
 	//Dirichlet
-	c->dirichlet_dxi_x = dvector(0,toln-1);
-	c->dirichlet_dxi_y = dvector(0,toln-1);
+	s->con.dirichlet_dxi_x = dvector(0,toln-1);
+	s->con.dirichlet_dxi_y = dvector(0,toln-1);
 
 	for(i=0; i<m; i++)
 		for(j=0;j<n;j++){
-			c->dirichlet_dxi_x[j*m+i]=0;
-			c->dirichlet_dxi_y[j*m+i]=0;
+			s->con.dirichlet_dxi_x[j*m+i]=0;
+			s->con.dirichlet_dxi_y[j*m+i]=0;
 		}
 
 	//Surface specification
-	c->fsineumanndirichlet=(char *)malloc((size_t) ((m*n)*sizeof(char)));
+	s->con.fsineumanndirichlet=(char *)malloc((size_t) ((m*n)*sizeof(char)));
 
 	switch (bc)
 	{
 		case 'N':
 			for(i=0; i<m; i++)
 				for(j=0;j<n;j++){
-					c->fsineumanndirichlet[j*m+i]='N';
+					s->con.fsineumanndirichlet[j*m+i]='N';
 			}
 			break;
 
 		case 'P':
 			for(i=0; i<m; i++)
 				for(j=0;j<n;j++){
-					if (((g->y_grid[j]+g->dx/2) > 0.3) || ((g->y_grid[j]+g->dx/2) < -0.3))
-						c->fsineumanndirichlet[j*m+i]='N';
+					if (((s->y_grid[j]+s->dx/2) > 0.3) || ((s->y_grid[j]+s->dx/2) < -0.3))
+						s->con.fsineumanndirichlet[j*m+i]='N';
 					else
-						c->fsineumanndirichlet[j*m+i]='D';
+						s->con.fsineumanndirichlet[j*m+i]='D';
 			}
 			break;
 
 		case 'D':
 			for(i=0; i<m; i++)
 				for(j=0;j<n;j++){
-					c->fsineumanndirichlet[j*m+i]='D';
+					s->con.fsineumanndirichlet[j*m+i]='D';
 			}
 			break;
 
@@ -239,24 +239,24 @@ void set_constraint(Constraint_S *c,Grid_S* g,char bc){
 }
 
 // assign cells to each processor
-void set_processor(Grid_S* ptr_g, AppCtx* ptr_u){
+void set_processor(Field_S* s, AppCtx* ptr_u){
 
-	int i,j,m = ptr_g->Nx;
-	int m_mid = ptr_g->Nx/2, n_mid = ptr_g->Ny/2;
+	int i,j,m = s->Nx;
+	int m_mid = s->Nx/2, n_mid = s->Ny/2;
 
 
 	// in the test, rank must be 2
-	for(i=0; i<ptr_g->Nx; i++)
-			for(j=0;j<ptr_g->Ny;j++)
+	for(i=0; i<s->Nx; i++)
+			for(j=0;j<s->Ny;j++)
 			{
 				//ptr_u->v2p[j*m+i] = -1;
 				//if (i/m_mid == ptr_u->rank)
-				ptr_u->v2p[j*m+i]=i/m_mid;
+				s->v2p[j*m+i]=i/m_mid;
 			}
 
 	// in the test, rank must be 4
-	/*for(i=0; i<ptr_g->Nx; i++)
-			for(j=0;j<ptr_g->Ny;j++)
+	/*for(i=0; i<s->Nx; i++)
+			for(j=0;j<s->Ny;j++)
 			{
 				ptr_u->v2p[j*m+i]=(j/m_mid)*2 + i/m_mid;
 			}

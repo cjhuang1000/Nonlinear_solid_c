@@ -2,50 +2,50 @@
 #include <string.h>
 #include <petscvec.h>
 
-void set_initial(Index_S* ptr_i, Solid* ptr_s, Field_S* ptr_fs)
+void set_initial(Field_S* s)
 {
 
     int       i,j;
     PetscInt  n;
 
     // initialize field_s
-    VecCreate(PETSC_COMM_WORLD,&ptr_fs->xi);
-    VecSetSizes(ptr_fs->xi,ptr_i->xix_N + ptr_i->xiy_N,ptr_i->xi_gloN);
-    VecSetFromOptions(ptr_fs->xi);
+    VecCreate(PETSC_COMM_WORLD,&(s->xi));
+    VecSetSizes(s->xi,s->ind.xix_N + s->ind.xiy_N,s->ind.xi_gloN);
+    VecSetFromOptions(s->xi);
 
-    VecDuplicate(ptr_fs->xi,&ptr_fs->dxi);
-    VecDuplicate(ptr_fs->xi,&ptr_fs->ddxi);
-    VecDuplicate(ptr_fs->xi,&ptr_fs->inc_dxi);
+    VecDuplicate(s->xi,&s->dxi);
+    VecDuplicate(s->xi,&s->ddxi);
+    VecDuplicate(s->xi,&s->inc_dxi);
 
     /* set initial condition*/
-    if (strcmp(ptr_s->initial,"rest")==0)
+    if (strcmp(s->param.initial,"rest")==0)
     {
-        VecZeroEntries(ptr_fs->xi);
-        VecZeroEntries(ptr_fs->dxi);
-        VecZeroEntries(ptr_fs->ddxi);
+        VecZeroEntries(s->xi);
+        VecZeroEntries(s->dxi);
+        VecZeroEntries(s->ddxi);
     }
 
-    if (strcmp(ptr_s->initial,"specified")==0)
+    if (strcmp(s->param.initial,"specified")==0)
     {
-        VecSet(ptr_fs->xi,0.06);
-        VecSet(ptr_fs->dxi,0.0);
-        VecSet(ptr_fs->ddxi,0.0);
+        VecSet(s->xi,0.06);
+        VecSet(s->dxi,0.0);
+        VecSet(s->ddxi,0.0);
     }
-    VecZeroEntries(ptr_fs->inc_dxi);
+    VecZeroEntries(s->inc_dxi);
 
-    VecAssemblyBegin(ptr_fs->xi);
-    VecAssemblyEnd(ptr_fs->xi);
-    VecAssemblyBegin(ptr_fs->dxi);
-    VecAssemblyEnd(ptr_fs->dxi);
-    VecAssemblyBegin(ptr_fs->ddxi);
-    VecAssemblyEnd(ptr_fs->ddxi);
-    VecAssemblyBegin(ptr_fs->inc_dxi);
-    VecAssemblyEnd(ptr_fs->inc_dxi);
+    VecAssemblyBegin(s->xi);
+    VecAssemblyEnd(s->xi);
+    VecAssemblyBegin(s->dxi);
+    VecAssemblyEnd(s->dxi);
+    VecAssemblyBegin(s->ddxi);
+    VecAssemblyEnd(s->ddxi);
+    VecAssemblyBegin(s->inc_dxi);
+    VecAssemblyEnd(s->inc_dxi);
 
-    VecCreate(PETSC_COMM_WORLD,&ptr_fs->traction);
-    VecSetSizes(ptr_fs->traction,ptr_i->xix_Ncell_Neumann + ptr_i->xiy_Ncell_Neumann,ptr_i->xi_gloNcell_Neumann);
-    VecSetFromOptions(ptr_fs->traction);
+    VecCreate(PETSC_COMM_WORLD,&s->traction);
+    VecSetSizes(s->traction,s->ind.xix_Ncell_Neumann + s->ind.xiy_Ncell_Neumann,s->ind.xi_gloNcell_Neumann);
+    VecSetFromOptions(s->traction);
 
-    VecSet(ptr_fs->traction,0.0);
+    VecSet(s->traction,0.0);
 
 }

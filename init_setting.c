@@ -4,9 +4,10 @@
 
 int sumarray (int array[], int target, int n);
 
-void set_index(Index_S* ind, Grid_S* g, AppCtx* ptr_u, int **bs, char *fsineumanndirichlet){
+void set_index(Field_S* s, AppCtx* ptr_u)
+{
 
-	int N = g->N,	m = g->Nx,	n = g->Ny;
+	int N = s->N,	m = s->Nx,	n = s->Ny;
 	int nint	=0,	nbnd	=0,		nfsi	=0, nneu	=0, ndir	=0;
 	int n_xix	=0,	n_xiy	=0;
 	int n_xfsi	=0,	n_yfsi	=0;
@@ -18,18 +19,19 @@ void set_index(Index_S* ind, Grid_S* g, AppCtx* ptr_u, int **bs, char *fsineuman
 	int ns_xydir;
 	int i,j,k,kk;
 
-	unsigned int *cell_int,		*cell_bnd, *cell_fsi, *cell_neu, *cell_dir;
-	int *xix_involved,	*xiy_involved;
-	int *cell_involved_fsi_x,	*cell_involved_fsi_y;
-	int *cell_involved_neu_x,	*cell_involved_neu_y;
-	int *cell_involved_dir_x,	*cell_involved_dir_y;
+	unsigned int 	*cell_int,	*cell_bnd, *cell_fsi, *cell_neu, *cell_dir;
+	int 			*xix_involved,	*xiy_involved;
+	int 			*cell_involved_fsi_x,	*cell_involved_fsi_y;
+	int 			*cell_involved_neu_x,	*cell_involved_neu_y;
+	int 			*cell_involved_dir_x,	*cell_involved_dir_y;
+	int 			**bs = s->param.boundary_sign;
 
-	struct invol involved;
+	struct 			invol involved;
 
-	int *ghostx, *ghosty;
-	PetscInt temp2;
-	PetscInt *pordering_x, *aordering_x, *pordering_y, *aordering_y;
-	AO		 ao_x, ao_y;
+	PetscInt 		temp2;
+	PetscInt 		*pordering_x, *aordering_x, *pordering_y, *aordering_y;
+	AO		 		ao_x, ao_y;
+	Index_S			*ind = &(s->ind);
 
 	cell_int = (unsigned int *) calloc(sizeof(unsigned int),N);
 	cell_bnd = (unsigned int *) calloc(sizeof(unsigned int),N);
@@ -51,10 +53,11 @@ void set_index(Index_S* ind, Grid_S* g, AppCtx* ptr_u, int **bs, char *fsineuman
 
 	// part I:  Determine whether a cell is in, out or on the boundary
 
-	ptr_u->dmx_s = 1e9;
-	ptr_u->dmx_e = 0;
-	ptr_u->dmy_s = 1e9;
-	ptr_u->dmy_e = 0;
+
+	s->dmx_s = 1e9;
+	s->dmx_e = 0;
+	s->dmy_s = 1e9;
+	s->dmy_e = 0;
 
 
 	for(j=1; j<n-1; j++)
@@ -68,48 +71,48 @@ void set_index(Index_S* ind, Grid_S* g, AppCtx* ptr_u, int **bs, char *fsineuman
 				involved    = involvedIndices_grid( kk , m);
 				for(k=0; k<6; k++)
 				{
-					if (ptr_u->v2p[involved.xix[k]] == ptr_u->rank) // if the cell belongs to this processor
+					if (s->v2p[involved.xix[k]] == ptr_u->rank) // if the cell belongs to this processor
 						xix_involved[involved.xix[k]] =1;
-					else if (ptr_u->v2p[kk] == ptr_u->rank) // if the cell belongs to the next processor
+					else if (s->v2p[kk] == ptr_u->rank) // if the cell belongs to the next processor
 						xix_involved[involved.xix[k]] =2;
 
-					if (ptr_u->v2p[involved.xiy[k]] == ptr_u->rank)
+					if (s->v2p[involved.xiy[k]] == ptr_u->rank)
 						xiy_involved[involved.xiy[k]] =1;
-					else if (ptr_u->v2p[kk] == ptr_u->rank)
+					else if (s->v2p[kk] == ptr_u->rank)
 						xiy_involved[involved.xiy[k]] =2;
 				}
 
 				// interior
 				if ((bs[i][j]+bs[i+1][j]+bs[i][j+1]+bs[i+1][j+1]) <= -3)
 				{
-					if (ptr_u->v2p[kk] == ptr_u->rank)
+					if (s->v2p[kk] == ptr_u->rank)
 					{
 						cell_int[nint] = kk;
 						nint +=1;
-						if (i < ptr_u->dmx_s) ptr_u->dmx_s = i;
-						if (i > ptr_u->dmx_e) ptr_u->dmx_e = i;
-						if (j < ptr_u->dmy_s) ptr_u->dmy_s = j;
-						if (j > ptr_u->dmy_e) ptr_u->dmy_e = j;
+						if (i < s->dmx_s) s->dmx_s = i;
+						if (i > s->dmx_e) s->dmx_e = i;
+						if (j < s->dmy_s) s->dmy_s = j;
+						if (j > s->dmy_e) s->dmy_e = j;
 					}
 				}
 				// boundary cells
 				else{
 
-					if (ptr_u->v2p[kk] == ptr_u->rank)
+					if (s->v2p[kk] == ptr_u->rank)
 					{
 						cell_bnd[nbnd] = kk;
 						nbnd +=1;
-						if (i < ptr_u->dmx_s) ptr_u->dmx_s = i;
-						if (i > ptr_u->dmx_e) ptr_u->dmx_e = i;
-						if (j < ptr_u->dmy_s) ptr_u->dmy_s = j;
-						if (j > ptr_u->dmy_e) ptr_u->dmy_e = j;
+						if (i < s->dmx_s) s->dmx_s = i;
+						if (i > s->dmx_e) s->dmx_e = i;
+						if (j < s->dmy_s) s->dmy_s = j;
+						if (j > s->dmy_e) s->dmy_e = j;
 					}
 
-					switch (fsineumanndirichlet[kk])
+					switch (s->con.fsineumanndirichlet[kk])
 					{
 					case 'F':
 
-						if (ptr_u->v2p[kk] == ptr_u->rank)
+						if (s->v2p[kk] == ptr_u->rank)
 						{
 							cell_fsi[nfsi] = kk;
 							nfsi +=1;
@@ -117,20 +120,20 @@ void set_index(Index_S* ind, Grid_S* g, AppCtx* ptr_u, int **bs, char *fsineuman
 
 						for(k=0; k<2; k++)
 						{
-							if (ptr_u->v2p[involved.stagx_cell[k]] == ptr_u->rank)
+							if (s->v2p[involved.stagx_cell[k]] == ptr_u->rank)
 								cell_involved_fsi_x[involved.stagx_cell[k]] =1;
-							else if (ptr_u->v2p[kk] == ptr_u->rank) // if the cell belongs to the next processor
+							else if (s->v2p[kk] == ptr_u->rank) // if the cell belongs to the next processor
 								cell_involved_fsi_x[involved.stagx_cell[k]] =2;
 
-							if (ptr_u->v2p[involved.stagy_cell[k]] == ptr_u->rank)
+							if (s->v2p[involved.stagy_cell[k]] == ptr_u->rank)
 								cell_involved_fsi_y[involved.stagy_cell[k]] =1;
-							else if (ptr_u->v2p[kk] == ptr_u->rank)
+							else if (s->v2p[kk] == ptr_u->rank)
 								cell_involved_fsi_y[involved.stagy_cell[k]] =2;
 						}
 						break;
 					case 'N':
 
-						if (ptr_u->v2p[kk] == ptr_u->rank)
+						if (s->v2p[kk] == ptr_u->rank)
 						{
 							cell_neu[nneu] = kk;
 							nneu +=1;
@@ -138,20 +141,20 @@ void set_index(Index_S* ind, Grid_S* g, AppCtx* ptr_u, int **bs, char *fsineuman
 
 						for(k=0; k<2; k++)
 						{
-							if (ptr_u->v2p[involved.stagx_cell[k]] == ptr_u->rank)
+							if (s->v2p[involved.stagx_cell[k]] == ptr_u->rank)
 								cell_involved_neu_x[involved.stagx_cell[k]] =1;
-							else if (ptr_u->v2p[kk] == ptr_u->rank)
+							else if (s->v2p[kk] == ptr_u->rank)
 								cell_involved_neu_x[involved.stagx_cell[k]] =2;
 
-							if (ptr_u->v2p[involved.stagy_cell[k]] == ptr_u->rank)
+							if (s->v2p[involved.stagy_cell[k]] == ptr_u->rank)
 								cell_involved_neu_y[involved.stagy_cell[k]] =1;
-							else if (ptr_u->v2p[kk] == ptr_u->rank)
+							else if (s->v2p[kk] == ptr_u->rank)
 								cell_involved_neu_y[involved.stagy_cell[k]] =2;
 						}
 						break;
 					case 'D':
 
-						if (ptr_u->v2p[kk] == ptr_u->rank)
+						if (s->v2p[kk] == ptr_u->rank)
 						{
 							cell_dir[ndir] = kk;
 							ndir +=1;
@@ -159,14 +162,14 @@ void set_index(Index_S* ind, Grid_S* g, AppCtx* ptr_u, int **bs, char *fsineuman
 
 						for(k=0; k<2; k++)
 						{
-							if (ptr_u->v2p[involved.stagx_cell[k]] == ptr_u->rank)
+							if (s->v2p[involved.stagx_cell[k]] == ptr_u->rank)
 								cell_involved_dir_x[involved.stagx_cell[k]] =1;
-							else if (ptr_u->v2p[kk] == ptr_u->rank)
+							else if (s->v2p[kk] == ptr_u->rank)
 								cell_involved_dir_x[involved.stagx_cell[k]] =2;
 
-							if (ptr_u->v2p[involved.stagy_cell[k]] == ptr_u->rank)
+							if (s->v2p[involved.stagy_cell[k]] == ptr_u->rank)
 								cell_involved_dir_y[involved.stagy_cell[k]] =1;
-							else if (ptr_u->v2p[kk] == ptr_u->rank)
+							else if (s->v2p[kk] == ptr_u->rank)
 								cell_involved_dir_y[involved.stagy_cell[k]] =2;
 						}
 						break;
@@ -467,8 +470,6 @@ void set_index(Index_S* ind, Grid_S* g, AppCtx* ptr_u, int **bs, char *fsineuman
 	PetscFree(pordering_x);  PetscFree(aordering_x); PetscFree(pordering_y); PetscFree(aordering_y);
 	AODestroy(&ao_x);
 	AODestroy(&ao_y);
-
-
 
 	// boundary cells - Dirichlet: do not need to append the ghost cells, only update the C2c
 

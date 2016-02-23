@@ -92,7 +92,7 @@ boundfunc_cell   compute_matricesCell_bound(int cell_i, double sdf_value[4], cha
 boundfunc_cell   compute_matricesSubcell(double bound_value[4], char bd_type, int* ptr_type);
 
 void reduce_vector(short int** a, int n_b, int n_a);
-void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat* ptr_NS, Mat* ptr_DS);
+void reduce_system(Field_S* s, Mat* ptr_MS, Mat* ptr_KLS, Mat* ptr_NS, Mat* ptr_DS);
 
 /// Setting up the
 void set_boundfunc(double ddx){
@@ -193,12 +193,16 @@ void set_boundfunc(double ddx){
 
 /// first time to calculate governing matrices for reducing system: assuming undeformed state
 /// Kl, M, DS, NS are constructed
-void compute_matricesNonlinearStructure(Matrices_S* ptr_ms, Index_S* ptr_i, Grid_S* ptr_g, Solid* ptr_s, char* fnd){
+void compute_matricesNonlinearStructure(Field_S* s){
+
+    Index_S* 		ptr_i = &(s->ind);
+    Param_S*		ptr_s = &(s->param);
+    char* 			fnd = s->con.fsineumanndirichlet;
 
     double          m2pl = 2*ptr_s->mu + ptr_s->lambda; // mu*2 plus lambda
     double          sdf[4]; // signed distance function
     
-    int             nx   = ptr_g->Nx;
+    int             nx   = s->Nx;
     int             i,j,k, ii, jj;
     int             cell_i,nsubcell,bdcell = 0;
     int             index_xix[6], index_xiy[6], index_stagx[2],index_stagy[2];
@@ -279,7 +283,7 @@ void compute_matricesNonlinearStructure(Matrices_S* ptr_ms, Index_S* ptr_i, Grid
 
     //Determine how many subcells are intersecting with the boundaries
     nsubcell = 0;
-    shapefunc.info = imatrix(0,ptr_g->N-1,0,3);
+    shapefunc.info = imatrix(0,s->N-1,0,3);
 
     for(i=0;i<ptr_i->cell_N_boundary ;i++)
     {
@@ -297,7 +301,7 @@ void compute_matricesNonlinearStructure(Matrices_S* ptr_ms, Index_S* ptr_i, Grid
 
     shapefunc.cutcell=(boundfunc_cutcell*) malloc(nsubcell*sizeof(boundfunc_cutcell));
 
-    for(i=0;i<ptr_g->N;i++)
+    for(i=0;i<s->N;i++)
         for(j=0;j<4;j++)
             shapefunc.info[i][j]=-3; // initial value: -3
                                      //   not a single corner in :-2
@@ -404,14 +408,14 @@ void compute_matricesNonlinearStructure(Matrices_S* ptr_ms, Index_S* ptr_i, Grid
     MatAssemblyEnd(DS_full,MAT_FINAL_ASSEMBLY);
 
     //Reduce system
-     reduce_system(ptr_g,ptr_i,&MS_full,&KLS_full,&NS_full,&DS_full);
+     reduce_system(s,&MS_full,&KLS_full,&NS_full,&DS_full);
 
     //Set the reduced governing matrices
-    MatGetSubMatrix(MS_full,ptr_i->is_xi,ptr_i->is_xi,MAT_INITIAL_MATRIX,&ptr_ms->MS);
-    MatGetSubMatrix(KLS_full,ptr_i->is_xi,ptr_i->is_xi,MAT_INITIAL_MATRIX,&ptr_ms->KLS);
-    MatGetSubMatrix(KLS_full,ptr_i->is_xi,ptr_i->is_xi,MAT_INITIAL_MATRIX,&ptr_ms->KNS); // just for initialization
-    MatGetSubMatrix(NS_full,ptr_i->is_xi,ptr_i->is_neu,MAT_INITIAL_MATRIX,&ptr_ms->NS);
-    MatGetSubMatrix(DS_full,ptr_i->is_xi,ptr_i->is_dir,MAT_INITIAL_MATRIX,&ptr_ms->DS);
+    MatGetSubMatrix(MS_full, ptr_i->is_xi,ptr_i->is_xi, MAT_INITIAL_MATRIX,&s->MS);
+    MatGetSubMatrix(KLS_full,ptr_i->is_xi,ptr_i->is_xi, MAT_INITIAL_MATRIX,&s->KLS);
+    MatGetSubMatrix(KLS_full,ptr_i->is_xi,ptr_i->is_xi, MAT_INITIAL_MATRIX,&s->KNS); // just for initialization
+    MatGetSubMatrix(NS_full, ptr_i->is_xi,ptr_i->is_neu,MAT_INITIAL_MATRIX,&s->NS);
+    MatGetSubMatrix(DS_full, ptr_i->is_xi,ptr_i->is_dir,MAT_INITIAL_MATRIX,&s->DS);
 
     // free the memory
     MatDestroy(&MS_full); MatDestroy(&KLS_full); MatDestroy(&NS_full); MatDestroy(&DS_full);
@@ -1017,12 +1021,13 @@ double boundFunct_NS_gamma(int l, double x, double y, double gamma){
     return z;
 }
 
-void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat* ptr_NS, Mat* ptr_DS)
+void reduce_system(Field_S* s, Mat* ptr_MS, Mat* ptr_KLS, Mat* ptr_NS, Mat* ptr_DS)
 // reduce_system.m
 {
     /*% REDUCE_SYSTEM reduces the initial system of equation  A * t[u, v, p] = F by removing:
     - irrelevant unknowns in u, v or p which have no-influence on the domain
     - by getting rid of the arbitrary solid-body-motion*/
+	Index_S		*ptr_i = &(s->ind);
 
     int         glon_xi =0, glon_cell_neu =0,glon_cell_dir =0; // global number
     int         n_xix =0, n_xix_gho =0, n_cellx_neu =0,n_cellx_dir =0;       // local number of cells
@@ -1139,10 +1144,10 @@ void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat
     //MPI_Scan(&temp,&ns_xixy_new,1,MPIU_INT,MPI_SUM,PETSC_COMM_WORLD); // get the starting index of xi x,y on each processor
     //ns_xixy_new -= temp;
 
-    ptr_i->xix.G2g_before = (short int *) malloc(sizeof(short int)*ptr_g->N);
-    ptr_i->xiy.G2g_before = (short int *) malloc(sizeof(short int)*ptr_g->N);
+    ptr_i->xix.G2g_before = (short int *) malloc(sizeof(short int)*s->N);
+    ptr_i->xiy.G2g_before = (short int *) malloc(sizeof(short int)*s->N);
 
-    for(i= 0 ; i< ptr_g->N ;i++)
+    for(i= 0 ; i< s->N ;i++)
     {
         ptr_i->xix.G2g_before[i] = ptr_i->xix.G2g[i];
         ptr_i->xiy.G2g_before[i] = ptr_i->xiy.G2g[i];
@@ -1200,7 +1205,7 @@ void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat
     	}
     }
 
-    for(i= 0 ; i< ptr_g->N ;i++)
+    for(i= 0 ; i< s->N ;i++)
     {
     	if (ptr_i->xix.C2c_dirichlet[i] != -1)
     		ptr_i->xix.C2c_dirichlet[i] = index_keep_stag_Dirichlet[ptr_i->xix.C2c_dirichlet[i]];
@@ -1259,7 +1264,7 @@ void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat
      	}
      }
 
-     for(i= 0 ; i< ptr_g->N ;i++)
+     for(i= 0 ; i< s->N ;i++)
      {
     	 if (ptr_i->xix.C2c_neumann[i] != -1)
     		 ptr_i->xix.C2c_neumann[i] = index_keep_stag_Neumann[ptr_i->xix.C2c_neumann[i]];
@@ -1278,39 +1283,6 @@ void reduce_system(Grid_S* ptr_g, Index_S* ptr_i, Mat* ptr_MS, Mat* ptr_KLS, Mat
      		temp++;
      	}
      }
-
-   //if (rank == 1)
-   // 	{
-   // 		for(i = 0; i<ptr_g->Nx; i++)
-   // 		{
-   // 			for(j = 0; j<ptr_g->Ny; j++)
-   // 				printf("%d \t",ptr_i->xix.C2c_neumann[i+j*ptr_g->Nx]);
-   // 			printf("\n");
-   // 		}
-   // 		printf("\n");
-   // 		for(i = 0; i<ptr_g->Nx; i++)
-   // 		{
-   // 			for(j = 0; j<ptr_g->Ny; j++)
-   // 				printf("%d \t",ptr_i->xiy.C2c_neumann[i+j*ptr_g->Nx]);
-   // 			printf("\n");
-   // 		}
-   // 	}
-
-    // --------Update the l2g, l2G and c2C arrays ------------
-
-    //ptr_i->xix.keep       = (short int *) malloc(sizeof(short int)*n_xix);
-    //ptr_i->xiy.keep       = (short int *) malloc(sizeof(short int)*n_xiy);
-
-
-	//for(i=0;i<n_xix;i++)
-    //{
-    //    ptr_i->xix.keep[i] = index_keep_xix[i];
-    //}
-
-	//for(i=0;i<n_xiy;i++)
-    //{
-    //    ptr_i->xiy.keep[i] = index_keep_xiy[i];
-    //}
 
     reduce_vector(&(ptr_i->xix.l2G),ptr_i->xix_N + ptr_i->xix_ghoN,n_xix + n_xix_gho);
     reduce_vector(&(ptr_i->xix.l2g),ptr_i->xix_N + ptr_i->xix_ghoN,n_xix + n_xix_gho);

@@ -70,19 +70,10 @@ typedef struct {
 	int			nlocal_f, nlocal_gho_f;			// local number of interior and ghosted panels in the fluid subdomain
 	VecScatter 	glo2loc;						// scatter the distributed panels to the processor which has the panel										// in the fluid subdomain
 
-	Vec 			sp_x0, sp_y0, ep_x0, ep_y0;
-	Vec 			sp_x , sp_y , ep_x , ep_y ;
-	Vec 			sp_u , sp_v , ep_u , ep_v ;
-	Vec 			sp_ax, sp_ay, ep_ax, ep_ay;
-
-	// compact marker point representation (be don ein the future)
-	// distributed vec
-	//Vec 			mkp_x0; 						// initial location of markers
-
-	// local sequential vec
-	//Vec			mkp_x;							// current velocity of all markers (sequential)
-	//Vec			mkp_dx;							// current acceleration of all markers (sequential)
-	//Vec			mkp_ddx; 						// current location of all markers
+	Vec 		sp_x0, sp_y0, ep_x0, ep_y0;
+	Vec 		sp_x , sp_y , ep_x , ep_y ;
+	Vec 		sp_u , sp_v , ep_u , ep_v ;
+	Vec 		sp_ax, sp_ay, ep_ax, ep_ay;
 
 	// contains all the information
 	Vec			l0;							// initial length
@@ -96,20 +87,20 @@ typedef struct {
 
 } Lag_marker;
 
-// before the iteration
-int forcing_pts_list_init(forcing_point_list_t *list);
+void marker_setup 		(Lag_marker* ptr_mk, Field_S* s, AppCtx* ptr_u);
+void list_setup			(Lag_marker* ptr_mk, Field_F* ptr_f);
+void disp_interp_setup 	(Lag_marker* ptr_mk, Field_S* s );
 
-void marker_setup (Grid_S* ptr_g, Solid* ptr_s, Index_S* ptr_i, Lag_marker* ptr_mk, AppCtx* ptr_u); // v
-void list_setup(Lag_marker* ptr_mk, Field_F* ptr_f);
-void disp_interp_setup (Lag_marker* ptr_mk, Index_S* ptr_i, Grid_S* ptr_g ); // v
+void build_current_marker(Lag_marker* mk, Field_S* s, Field_F* f);
+void update_sdf 		 (Lag_marker* mk, Field_F* f);
 
-void build_current_marker (Lag_marker* ptr_mk, Field_S* ptr_s, Field_F* ptr_f, Index_S* ptr_i, AppCtx* ptr_u);
-void update_sdf (Grid_S* ptr_g, Lag_marker* ptr_mk, AppCtx* ptr_u, Field_F* ptr_f);
-void force_calculation (Index_S* ptr_i, Field_F* ptr_f, Field_S* ptr_s, Lag_marker* ptr_mk);
+void force_calculation 	(Field_F* ptr_f, Field_S* ptr_s, Lag_marker* ptr_mk);
 
+// already in fluid solver, need some changes
+int  forcing_pts_list_init(forcing_point_list_t *list);
 void ib_find_forcing_pts_2d (Field_F* ptr_f, Lag_marker* ptr_mk);
 void apply_forcing_2d (Field_F *f, const double sor);
-void A_times_b_3x3 (double *a, double *b, double *c); // v
+void A_times_b_3x3 (double *a, double *b, double *c);
 
 
 #endif  /* INTERFACE_MARKER_H */

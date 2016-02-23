@@ -8,6 +8,12 @@
 #include <petscis.h>
 #include <petscdmda.h>
 
+typedef struct {
+
+	PetscMPIInt	rank,size;
+
+}AppCtx;
+
 typedef struct
 {
 
@@ -59,57 +65,6 @@ typedef struct {
 } Index_S;
 
 
-
-typedef struct {
-
-    /* displacement,velocity */
-    Vec xi;   //[xi.x1; xi.y1; xi_x2;xi_y2;...]
-    Vec dxi;
-    Vec ddxi;
-    Vec inc_dxi;
-	Vec traction;
-	
-} Field_S;
-
-// The index of the solid staggered grid is defined in the following manner
-//  +------------+
-//  |            |
-//  |            |
-// ---   i,j     |
-//  |            |
-//  |            |
-//  +------|-----+
-//
-
-typedef struct {
-
-	/* mass, stiffness matrices, load vectors */
-	/*Governing matrices*/
-	Mat MS; // constant part of the LHS
-	// MS.xx  |       
-	// -------+-------
-	//        | MS.yy 
-	
-	Mat DS;
-	//  DS.xc |
-	// -------+-------
-	//        | DS.yc
-
-	Mat KLS,KNS;
-	// KLS.xx | KLS.xy        
-	// -------+--------
-	// KLS.xy'| KLS.yy 
-
-	Mat NS;
-	// NS.xc  |
-	// -------+--------
-	//        | NS.yc
-    
-    Vec FS;
-
-} Matrices_S;
-
-
 /* boundary type at the solid boundary */
 typedef struct {
 
@@ -133,21 +88,6 @@ typedef struct {
 
 typedef struct {
 
-  /* global domain dimension */
-  double	char_lengh;  // characteristic length of the problem
-  double	domain_x[2],domain_y[2]; // domain interval
-  double	domain_size[2];
-
-  double	res,dx;   // resolution and grid spacing
-
-  int		 Nx,Ny,N;     // number of grid in x- and y- direction, total grid number
-  double	*x_grid, *y_grid;
-
-} Grid_S;
-
-
-typedef struct {
-
 	double  length;
 	double	rho;
 	double	mu;
@@ -163,7 +103,7 @@ typedef struct {
 	double  threshold;
 	double  damping[2]; // damping alpha and beta
 
-}Solid;
+}Param_S;
 
 
 typedef struct {
@@ -175,18 +115,72 @@ typedef struct {
 	double	delta;
 	double	theta;
 
-}TimeMarching;
+}TimeMarching_S;
 
 typedef struct {
 
-	PetscInt    *v2p;  // processor number for a vertex
-	VecScatter  scatter_x, scatter_y;
-	AO			ao;
-	PetscMPIInt	rank,size;
-	int 		dmx_s, dmy_s, dmx_e, dmy_e;
-	DM			dmda;
+    // ----  displacement,velocity, acceleration [xi.x1; xi.y1; xi_x2;xi_y2;...] ---
+	Vec xi,	xi_old, xi_k;
+    Vec dxi, dxi_old, dxi_k;
+    Vec ddxi, ddxi_old, ddxi_k; 			// at current step, previous step, current iteration
+    Vec inc_dxi;							// increment analysis
+	Vec traction; 							// traction on the solid boundary
 
-}AppCtx;
+	// The index of the solid staggered grid is defined in the following manner
+	//  +------------+
+	//  |            |
+	//  |            |
+	// ---   i,j     |
+	//  |            |
+	//  |            |
+	//  +------|-----+
+	//
+
+	Index_S ind;
+
+	// ----- Governing matrices: mass, stiffness matrices, load vectors
+	Mat MS; // constant part of the LHS
+		// MS.xx  |
+		// -------+-------
+		//        | MS.yy
+	Mat DS;
+		//  DS.xc |
+		// -------+-------
+		//        | DS.yc
+	Mat KLS,KNS;
+		// KLS.xx | KLS.xy
+		// -------+--------
+		// KLS.xy'| KLS.yy
+	Mat NS;
+		// NS.xc  |
+		// -------+--------
+		//        | NS.yc
+    Vec FS;
+
+    Constraint_S 	con;
+    Param_S			param;
+    TimeMarching_S	time;
+
+	PetscInt    *v2p;  // the index of the processor each cell belongs to
+	VecScatter  scatter_x, scatter_y;
+	int 		dmx_s, dmy_s, dmx_e, dmy_e; // subdomain boundary
+
+	// global domain dimension
+	double		char_lengh;  // characteristic length of the problem
+	double		domain_x[2],domain_y[2]; // domain interval
+	double		domain_size[2];
+	double		res,dx;   // resolution and grid spacing
+	int			Nx,Ny,N;     // number of grid in x- and y- direction, total grid number
+	double		*x_grid, *y_grid;
+
+	// for solving Ax = RHS
+	Mat			A,subA[4];
+	Vec			RHS,subRHS[2],x,subx[2], tempvec, tempvec2;
+	IS 			isg[2];
+	KSP			ksp;
+	PC			pc;
+
+}Field_S;
 
 
 #endif  /* FIELD_S_H */

@@ -1,8 +1,8 @@
 #ifndef INIT_SETTING_H
 #define INIT_SETTING_H 1
+// DONE
 
-
-// set index, bound function, inital
+// set index, bound function
 #include "Field_s.h"
 #include <petsc.h>
 #include <petscao.h>
@@ -17,7 +17,7 @@ struct invol
 };
 
 
-void set_index(Index_S* ind, Grid_S* g, AppCtx* ptr_u, int **bs, char *fsineumanndirichlet);
+void set_index(Field_S* s, AppCtx* ptr_u);
 struct invol involvedIndices_grid(int cell, int m);
 
 #endif  /* INIT_SETTING_H */

@@ -8,16 +8,16 @@ static int index_range_set_rhs(char which_var, Field_F *f,
                                const int *i, const int *j, const int *k);
 
 
-void fluid_setup(Field_F* f, Grid_S* g, Solid* s)
+void fluid_setup(Field_F* f, Field_S* s)
 {
 
 	int  			s_width 	= 2; // stencil width
 	int  			dof 		= 1;
-	int  			nx 			= (g->Nx-1)*2+1, ny = (g->Ny-1)*2+1;  // fluid grid size is half of solid grid size
+	int  			nx 			= (s->Nx-1)*2+1, ny = (s->Ny-1)*2+1;  // fluid grid size is half of solid grid size
 	int				i,rank;
 	const int 		start		= 0, end=1;
 
-	double 			dx			= g->dx/2;
+	double 			dx			= s->dx/2;
 	double			domain[6]	={-1.0,1.0,-1.0,1.0, 0.0, 0.0};
 	DMDAStencilType s_type 		= DMDA_STENCIL_BOX;
 	DMBoundaryType  b_type 		= DM_BOUNDARY_NONE;
@@ -38,7 +38,7 @@ void fluid_setup(Field_F* f, Grid_S* g, Solid* s)
 	DMDAGetInfo(f->da, PETSC_NULL,                  /* DA, no. of dims */
 	            &NX, &NY, &NZ,                      /* global dimensions */
 	            &npx, &npy, &npz,                   /* proc grid dimensions */
-	            PETSC_NULL, PETSC_NULL, PETSC_NULL, PETSC_NULL, PETSC_NULL, /* dof, width, wrap */
+	            PETSC_NULL, PETSC_NULL, PETSC_NULL, PETSC_NULL, PETSC_NULL, /* dof, width, boudanrytype */
 	            PETSC_NULL);                        /* stencil type */
 
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);

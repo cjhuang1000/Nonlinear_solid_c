@@ -4,7 +4,7 @@
  *  Created on: Oct 25, 2015
  *      Author: peggyhuang
  */
-
+//DONE
 #ifndef FLUID_H_
 #define FLUID_H_ 1
 
@@ -240,7 +240,7 @@ typedef struct {
 // solid solver and interface code in c
 
 
-void fluid_setup(Field_F* f, Grid_S* g, Solid* s);
+void fluid_setup(Field_F* f, Field_S* s);
 void index_range_get_raw(char which_var, Field_F *f,
                         int *i, int *j, int *k);
 void index_range_get_rhs(char which_var, Field_F *f,

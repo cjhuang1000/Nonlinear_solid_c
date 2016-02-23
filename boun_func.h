@@ -1,6 +1,8 @@
 #ifndef BOUN_FUNC_H
 #define BOUN_FUNC_H 1
 
+//DONE
+
 #include "Field_s.h"
 #include "init_setting.h"
 
@@ -88,6 +90,6 @@ struct shapefunction{
 /*Internal Cell Elemental Matrices*/
 
 void set_boundfunc(double dx);
-void compute_matricesNonlinearStructure(Matrices_S* ptr_ms, Index_S* ptr_i, Grid_S* ptr_g, Solid* ptr_s, char* fnd);
+void compute_matricesNonlinearStructure(Field_S* s);
 
 #endif  /* BOUN_FUNC_H */
