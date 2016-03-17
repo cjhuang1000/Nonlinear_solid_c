@@ -20,6 +20,8 @@ void SolidInitialize(Field_S* s, AppCtx* ptr_u){
     set_index(s, ptr_u); 	// set indices
     set_boundfunc(s->dx); 	// initialize boundary function
 
+
+
     // =============== Constructing governing matrices and vectors ================
 
     compute_matricesNonlinearStructure(s);	// construct the governing matrices
@@ -30,6 +32,8 @@ void SolidInitialize(Field_S* s, AppCtx* ptr_u){
     VecSetFromOptions(s->FS);
 
     //================== Setting constraints ======================
+
+    printf("[Setting constraints] started\n");
 
      VecDuplicate(s->FS, &s->con.xi_body);
      VecDuplicate(s->FS, &s->con.xi_Neumann);
@@ -70,9 +74,12 @@ void SolidInitialize(Field_S* s, AppCtx* ptr_u){
      MatMult(s->NS,s->tempvec,s->con.xi_Neumann);
      VecDestroy(&(s->tempvec));
 
+     printf("[Setting constraints] ended\n");
+
      // =============== Initial setting of the solid field ================
 
-     set_initial(s);	// set initil
+     printf("[Initial setting] started\n");
+     set_initial(s);	// set initial
 
      VecDuplicate(s->xi,&(s->xi_old));
      VecDuplicate(s->xi,&(s->dxi_old));
@@ -86,8 +93,10 @@ void SolidInitialize(Field_S* s, AppCtx* ptr_u){
 
      setScattering(s);
 
+     printf("[Initial setting] ended\n");
      // ============== Preparation for solving the linear system =============
 
+     printf("[Preparation for solving the linear system ] started\n");
      // Setup vec and mat
      VecDuplicate(s->xi, &(s->subRHS[0]));
      VecDuplicate(s->con.xi_Dirichlet, &(s->subRHS[1]));
@@ -110,13 +119,14 @@ void SolidInitialize(Field_S* s, AppCtx* ptr_u){
  	 MatTranspose(s->DS,MAT_INITIAL_MATRIX,&s->subA[2]);			// DS^T
  	 MatDuplicate(s->MS,MAT_DO_NOT_COPY_VALUES,&s->subA[0]);
 
+ 	printf("[Preparation for solving the linear system ] ended\n");
 }
 
 
 // Iteration, update the displacement
 void SolidSolver(Field_S* s){
 
-    int     i,j,n;
+    int     i,j,n, loop=0;
     double  residue0, residue1;
 
     PetscScalar  	c,c1;
@@ -124,13 +134,14 @@ void SolidSolver(Field_S* s){
     TimeMarching_S  *timem = &(s->time);
     Param_S			*param = &(s->param);
     PetscErrorCode  ierr;
+    PetscReal 		norm; // residual norm for ksp
 
     compute_matricesNonlinearStructure_update(s);
 
     // Governing matrix A
     MatCopy(s->MS,s->subA[0],DIFFERENT_NONZERO_PATTERN);
 
-    c = param->damping[0] + 1/timem->dt/timem->delta;
+    c = param->damping[0] + 1.0/timem->dt/timem->delta;
     MatScale(s->subA[0],c);
     c = param->damping[1] + timem->dt * timem->theta / timem->delta;
     MatAXPY(s->subA[0],c,s->KLS,DIFFERENT_NONZERO_PATTERN);
@@ -143,54 +154,71 @@ void SolidSolver(Field_S* s){
     // RHS
     c = 1.0;
     VecWAXPY(s->subRHS[0],c,s->con.xi_Neumann,s->con.xi_body);
-    c = -param->damping[0]; c1 = 1/timem->delta -1;
+    c = -param->damping[0]; c1 = 1.0/timem->delta -1.0;
     VecCopy(s->ddxi_old,s->tempvec);
     VecAXPBY(s->tempvec,c,c1,s->dxi_old);
     MatMultAdd(s->MS,s->tempvec,s->subRHS[0],s->subRHS[0]);
 
-    c = -timem->dt - param->damping[1]; c1 = -timem->dt*timem->dt* (1-2*timem->theta/timem->delta);
+    c = -timem->dt - param->damping[1]; c1 = -timem->dt*timem->dt* (1.0-2.0*timem->theta/timem->delta);
     VecCopy(s->ddxi_old,s->tempvec);
     VecAXPBY(s->tempvec,c,c1,s->dxi_old);
     MatMultAdd(s->KLS,s->tempvec,s->subRHS[0],s->subRHS[0]);
 
-    c = -timem->dt; c1 = -timem->dt*timem->dt* (1-2*timem->theta/timem->delta);
+    c = -timem->dt; c1 = -timem->dt*timem->dt* (1.0-2.0*timem->theta/timem->delta);
     VecCopy(s->ddxi_old,s->tempvec);
     VecAXPBY(s->tempvec,c,c1,s->dxi_old);
    	MatMultAdd(s->KNS,s->tempvec,s->subRHS[0],s->subRHS[0]);
    	c = -1.0;
-    ierr = VecAXPY(s->subRHS[0],c,s->FS); CHKERRQ(ierr);
+    VecAXPY(s->subRHS[0],c,s->FS);
 
    	VecCopy(s->dxi_old,s->tempvec);
    	VecScale(s->tempvec,c);
    	MatMult(s->subA[2],s->tempvec,s->subRHS[1]);
+   	VecAXPY(s->subRHS[1],1.0,s->con.xi_Dirichlet);
 
    	VecCreateNest(PETSC_COMM_WORLD,2,NULL,s->subRHS,&(s->RHS));
 
+	//PetscViewer viewer;
+
+    // write vec/mat
+    //PetscViewerCreate(PETSC_COMM_WORLD, &viewer);
+    //PetscViewerSetType(viewer,PETSCVIEWERASCII );
+    //PetscViewerFileSetMode(viewer, FILE_MODE_WRITE);
+    //PetscViewerFileSetName(viewer,"RHS.dat");
+    //VecView(s->subRHS[0], viewer);
+    //VecView(s->subRHS[1], viewer);
+    //PetscViewerDestroy(&viewer);
+
+
 	// seting the KSP solver
     KSPCreate(PETSC_COMM_WORLD,&(s->ksp));
-    KSPSetType(s->ksp, KSPGMRES);
+    //KSPSetType(s->ksp, KSPGMRES);
+    KSPSetInitialGuessNonzero(s->ksp,PETSC_TRUE);
 	KSPSetOperators(s->ksp,s->A,s->A);
-	//KSPSetTolerances(ksp,PETSC_DEFAULT,1.e-20,PETSC_DEFAULT,PETSC_DEFAULT);
+	//KSPSetTolerances(s->ksp,1e-5,PETSC_DEFAULT,PETSC_DEFAULT,PETSC_DEFAULT);
 	KSPSetFromOptions(s->ksp);
 	KSPGetPC(s->ksp,&(s->pc));
 	PCFieldSplitSetIS(s->pc,"0",s->isg[0]);
 	PCFieldSplitSetIS(s->pc,"1",s->isg[1]);
 
+	printf("[KSPSolve] started\n");
 	// solve
-	ierr = KSPSolve(s->ksp,s->RHS,s->x); CHKERRQ(ierr);
+	KSPSolve(s->ksp,s->RHS,s->x);
+	KSPGetResidualNorm(s->ksp,&norm);
+	printf("[KSPSolve] ended, the residual norm is %e\n",norm);
 
 	VecNestGetSubVec(s->x,0,&s->tempvec2);
 	VecCopy(s->tempvec2,s->inc_dxi);
 
 	//update
-	c = (timem->delta - 1.0)*timem->dt;  c1 = 1/timem->delta/timem->dt;
+	c = (timem->delta - 1.0)*timem->dt;  c1 = 1.0/timem->delta/timem->dt;
 	VecWAXPY(s->ddxi,c,s->ddxi_old,s->inc_dxi);
 	VecScale(s->ddxi,c1);
 
 	c = timem->dt;
 	VecWAXPY(s->xi,c,s->dxi_old,s->xi_old);
 
-	c = timem->theta*timem->dt*timem->dt;  c1 = (1-2*timem->theta)*timem->dt*timem->dt/2;
+	c = timem->theta*timem->dt*timem->dt;  c1 = (1.0-2.0*timem->theta)*timem->dt*timem->dt/2.0;
 	VecAXPY(s->xi,c,s->ddxi);
 	VecAXPY(s->xi,c1,s->ddxi_old);
 
@@ -198,18 +226,24 @@ void SolidSolver(Field_S* s){
 	VecWAXPY(s->dxi,c,s->dxi_old,s->inc_dxi);
 	// residue
 	VecNorm(s->xi,NORM_2,&residue0);
+	printf("residual0 : %e\n", residue0);
 	residue1 = residue0;
 
 	fieldCopy_current_to_k (s);
 
+	printf("[Enter While loop] started\n");
 	// while loop
 	while ( (residue1/residue0) > param->threshold)
 	{
+		loop++;
+		printf("[While loop] looping\n");
+		printf("%d %f\n",loop,(residue1/residue0));
+
 		compute_matricesNonlinearStructure_update(s);
 
 		// Governing matrix A
 		MatCopy(s->MS,s->subA[0],DIFFERENT_NONZERO_PATTERN);
-		c = param->damping[0] + 1/timem->dt/timem->delta;
+		c = param->damping[0] + 1.0/timem->dt/timem->delta;
 		MatScale(s->subA[0],c);
 		c = param->damping[1] + timem->dt * timem->theta / timem->delta;
 		MatAXPY(s->subA[0],c,s->KLS,DIFFERENT_NONZERO_PATTERN);
@@ -235,37 +269,39 @@ void SolidSolver(Field_S* s){
 		VecWAXPY(s->tempvec,c,s->xi_old,s->xi_k);
 		VecAXPY(s->tempvec,c1,s->dxi_k);
 		c = -timem->dt*(1.0-timem->theta/timem->delta); c1 = -timem->dt*timem->dt* (1-2*timem->theta/timem->delta);
-		VecAXPY(s->tempvec,c1,s->dxi_old);
-		VecAXPY(s->tempvec,c, s->ddxi_old);
+		VecAXPY(s->tempvec,c,s->dxi_old);
+		VecAXPY(s->tempvec,c1, s->ddxi_old);
 		MatMultAdd(s->KLS,s->tempvec,s->subRHS[0],s->subRHS[0]);
 
 		c = -1.0; c1 = -timem->dt*timem->theta/timem->delta;
 		VecWAXPY(s->tempvec,c,s->xi_old,s->xi_k);
 		VecAXPY(s->tempvec,c1,s->dxi_k);
 		c = -timem->dt*(1.0-timem->theta/timem->delta); c1 = -timem->dt*timem->dt* (1-2*timem->theta/timem->delta);
-		VecAXPY(s->tempvec,c1,s->dxi_old);
-		VecAXPY(s->tempvec,c,s->ddxi_old);
+		VecAXPY(s->tempvec,c,s->dxi_old);
+		VecAXPY(s->tempvec,c1,s->ddxi_old);
 		MatMultAdd(s->KNS,s->tempvec,s->subRHS[0],s->subRHS[0]);
 
 		c = -1.0;
 		VecAXPY(s->subRHS[0],c,s->FS);
-		//VecView(subRHS[0],PETSC_VIEWER_STDOUT_WORLD);
 
-		VecCopy(s->dxi_old,s->tempvec);
+		VecCopy(s->dxi_k,s->tempvec);
 		VecScale(s->tempvec,c);
 		MatMult(s->subA[2],s->tempvec,s->subRHS[1]);
+		VecAXPY(s->subRHS[1],1.0,s->con.xi_Dirichlet);
+		//VecView(s->subRHS[1],PETSC_VIEWER_STDOUT_WORLD);
 
 	   	VecCreateNest(PETSC_COMM_WORLD,2,NULL,s->subRHS,&(s->RHS));
 
 		// seting the KSP solver
 		KSPDestroy(&(s->ksp));
 		KSPCreate(PETSC_COMM_WORLD,&(s->ksp));
-		KSPSetType(s->ksp, KSPFGMRES);
+		//KSPSetType(s->ksp, KSPFGMRES);
 		KSPSetOperators(s->ksp,s->A,s->A);
+		KSPSetInitialGuessNonzero(s->ksp,PETSC_TRUE); // nonzero initial guess
 		KSPSetFromOptions(s->ksp);
 		KSPGetPC(s->ksp,&(s->pc));
-		PCFieldSplitSetIS(s->pc,"0",s->isg[0]);CHKERRQ(ierr);
-		PCFieldSplitSetIS(s->pc,"1",s->isg[1]);CHKERRQ(ierr);
+		PCFieldSplitSetIS(s->pc,"0",s->isg[0]);
+		PCFieldSplitSetIS(s->pc,"1",s->isg[1]);
 
 		// solve
 		KSPSolve(s->ksp,s->RHS,s->x);
@@ -291,12 +327,13 @@ void SolidSolver(Field_S* s){
 		c = -1.0;
 		VecWAXPY(s->tempvec,c,s->xi_k,s->xi);
 		VecNorm(s->tempvec,NORM_2,&residue1);
-
+		//residue1 = 0.1*residue0;
 		fieldCopy_current_to_k(s);
 
 	}
 
 	fieldCopy_current_to_old(s);
+	printf("[Enter While loop] ended\n");
 
 }
 
@@ -341,6 +378,86 @@ void setScattering(Field_S* s)
 
     VecDestroy(&local_x); VecDestroy(&local_y);
     ISDestroy(&is_xix);  ISDestroy(&is_xiy);
+}
+
+void restart_file_output (Field_S* s)
+{
+
+	/*
+	char  xi_file[] = "xi_data.dat";
+	PetscViewer viewer;
+
+    // write u
+    PetscViewerCreate(PETSC_COMM_WORLD, &viewer);
+    PetscViewerSetType(viewer,PETSCVIEWERASCII );
+    PetscViewerFileSetMode(viewer, FILE_MODE_WRITE);
+    PetscViewerFileSetName(viewer,xi_file);
+    VecView(s->xi, viewer);
+    PetscViewerDestroy(&viewer);
+    */
+
+}
+
+void field_output (Field_S* s)
+{
+	char  filename_x[256] = "xi_data_";
+	char  filename_y[256] = "eta_data_";
+	char  ext[] = ".dat";
+	char  rank_str[256];
+	int		rank,i,ii,jj,cell;
+	int 	nx = s->Nx;
+	FILE    *fp_x, *fp_y;
+	Vec		xix_local, xiy_local;
+	double  *xix, *xiy;
+
+	MPI_Comm_rank(MPI_COMM_WORLD,&rank);
+	sprintf(rank_str,"%2d",rank);
+
+	strcat(filename_x,rank_str);
+	strcat(filename_x,ext);
+
+	strcat(filename_y,rank_str);
+	strcat(filename_y,ext);
+
+	fp_x = fopen(filename_x, "w");
+	fp_y = fopen(filename_y, "w");
+
+	VecCreateSeq(PETSC_COMM_SELF,s->ind.xix_N +s->ind.xix_ghoN,&xix_local);
+    VecCreateSeq(PETSC_COMM_SELF,s->ind.xiy_N +s->ind.xiy_ghoN,&xiy_local);
+
+    VecScatterBegin	(s->scatter_x,s->xi,xix_local,INSERT_VALUES,SCATTER_FORWARD);
+    VecScatterEnd	(s->scatter_x,s->xi,xix_local,INSERT_VALUES,SCATTER_FORWARD);
+
+    VecScatterBegin	(s->scatter_y,s->xi,xiy_local,INSERT_VALUES,SCATTER_FORWARD);
+    VecScatterEnd	(s->scatter_y,s->xi,xiy_local,INSERT_VALUES,SCATTER_FORWARD);
+
+    VecGetArray(xix_local,&xix);
+    VecGetArray(xiy_local,&xiy);
+
+    fprintf(fp_x,"# %d\n",s->ind.xix_N);
+    fprintf(fp_y,"# %d\n",s->ind.xiy_N);
+
+    for(i=0;i<s->ind.xix_N ;i++){
+    	cell = s->ind.xix.l2G[i];
+    	ii = cell%nx;
+    	jj = (int) floor((double)cell/nx);
+    	fprintf(fp_x,"%d %d %.15e\n",ii,jj,xix[i]);
+    }
+
+    for(i=0;i<s->ind.xiy_N ;i++){
+    	cell = s->ind.xiy.l2G[i];
+    	ii = cell%nx;
+    	jj = (int) floor((double)cell/nx);
+    	fprintf(fp_y,"%d %d %.15e\n",ii,jj,xiy[i]);
+    }
+
+    VecRestoreArray(xix_local,&xix);
+    VecRestoreArray(xiy_local,&xiy);
+
+    VecDestroy(&xix_local);
+    VecDestroy(&xiy_local);
+	fclose(fp_x);
+	fclose(fp_y);
 }
 
 // Copy the value in from *xi to *xi_old

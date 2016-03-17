@@ -57,10 +57,10 @@ int main(int argc,char **argv)
     //InterfaceInitialize(&marker,&solid, &flow, &user);
 
     // iteration
-    //for(step = 1; step <= solid.time.nstep; step++)
-    //{
+    for(step = 1; step <= solid.time.nstep; step++)
+    {
     	timestep = step*solid.time.dt;
-
+    	printf("time step : %f/%d\n",timestep,solid.time.nstep);
     	//InterfaceUpdate(&marker, &solid, &flow);	// update marker
     	// fluid solver
 
@@ -68,8 +68,8 @@ int main(int argc,char **argv)
     	SolidSolver(&solid);
     	// check
 
-    //}
-
+    }
+    field_output (&solid);
     // finalize
     SolidFinalize(&solid);
 

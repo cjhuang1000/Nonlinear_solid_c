@@ -33,6 +33,7 @@ void set_index(Field_S* s, AppCtx* ptr_u)
 	AO		 		ao_x, ao_y;
 	Index_S			*ind = &(s->ind);
 
+	printf("[%s] started\n", __func__);
 	cell_int = (unsigned int *) calloc(sizeof(unsigned int),N);
 	cell_bnd = (unsigned int *) calloc(sizeof(unsigned int),N);
 	cell_fsi = (unsigned int *) calloc(sizeof(unsigned int),N);
@@ -64,8 +65,8 @@ void set_index(Field_S* s, AppCtx* ptr_u)
 		for(i=1; i<m-1;i++)
 		{
 			// Not-external cells (at least 1 corner in)
-			if ((bs[i][j] == -1) || (bs[i+1][j] == -1) ||
-				(bs[i][j+1] == -1) || (bs[i+1][j+1] == -1))
+			if ((bs[i*2][j*2] == -1) || (bs[i*2+2][j*2] == -1) ||
+				(bs[i*2][j*2+2] == -1) || (bs[i*2+2][j*2+2] == -1))
 			{
 				kk = i+j*m;
 				involved    = involvedIndices_grid( kk , m);
@@ -83,7 +84,7 @@ void set_index(Field_S* s, AppCtx* ptr_u)
 				}
 
 				// interior
-				if ((bs[i][j]+bs[i+1][j]+bs[i][j+1]+bs[i+1][j+1]) <= -3)
+				if ((bs[i*2][j*2]+bs[i*2+2][j*2]+bs[i*2][j*2+2]+bs[i*2+2][j*2+2]) <= -3)
 				{
 					if (s->v2p[kk] == ptr_u->rank)
 					{
@@ -180,6 +181,11 @@ void set_index(Field_S* s, AppCtx* ptr_u)
 			}
 		}
 
+	s->dmx_s -- ;
+	s->dmx_e ++;
+	s->dmy_s --;
+	s->dmy_e ++;
+
 	// part II: Count the number of involved cells
 
 	ind->cell_N_interior	= nint;
@@ -189,24 +195,32 @@ void set_index(Field_S* s, AppCtx* ptr_u)
 	ind->cell_N_FSI			= nfsi;
 
     ind->cell_interior = (unsigned int *) malloc(sizeof(unsigned int)*nint);
-    for(i=0; i<nint; i++)
+    for(i=0; i<nint; i++){
         ind->cell_interior[i]=cell_int[i];
+        //printf("interior %d %d\n",i,ind->cell_interior[i]);
+    }
 
     ind->cell_boundary = (unsigned int *) malloc(sizeof(unsigned int)*nbnd);
-    for(i=0; i<nbnd; i++)
+    for(i=0; i<nbnd; i++){
         ind->cell_boundary[i]=cell_bnd[i];
+        //printf("boundary %d %d\n",i,ind->cell_boundary[i]);
+    }
 
     ind->cell_fsi = (unsigned int *) malloc(sizeof(unsigned int)*nfsi);
     for(i=0; i<nfsi; i++)
         ind->cell_fsi[i]=cell_fsi[i];
 
     ind->cell_neumann= (unsigned int *) malloc(sizeof(unsigned int)*nneu);
-    for(i=0; i<nneu; i++)
+    for(i=0; i<nneu; i++){
         ind->cell_neumann[i]=cell_neu[i];
+        //printf("neumann %d %d\n",i,ind->cell_neumann[i]);
+    }
 
     ind->cell_dirichlet = (unsigned int *) malloc(sizeof(unsigned int)*ndir);
-    for(i=0; i<ndir; i++)
+    for(i=0; i<ndir; i++){
         ind->cell_dirichlet[i]=cell_dir[i];
+        //printf("dirichlet %d %d\n",i,ind->cell_dirichlet[i]);
+    }
 
     // to here
 	// part II-I: reordering
@@ -244,8 +258,8 @@ void set_index(Field_S* s, AppCtx* ptr_u)
 	ind->xix.l2G = (short int *) malloc(sizeof(short int)*(ind->xix_N + ind->xix_ghoN));
 	ind->xix.G2g = (short int *) malloc(sizeof(short int)*N);
 
-	ind->xiy.l2g= (short int *) malloc(sizeof(short int)*(ind->xiy_N + ind->xiy_ghoN));
-	ind->xiy.l2G= (short int *) malloc(sizeof(short int)*(ind->xiy_N + ind->xiy_ghoN));
+	ind->xiy.l2g = (short int *) malloc(sizeof(short int)*(ind->xiy_N + ind->xiy_ghoN));
+	ind->xiy.l2G = (short int *) malloc(sizeof(short int)*(ind->xiy_N + ind->xiy_ghoN));
 	ind->xiy.G2g = (short int *) malloc(sizeof(short int)*N);
 
 	ind->xix.c2C_fsi = (short int *) malloc(sizeof(short int)*ind->xix_Ncell_FSI);
@@ -508,6 +522,8 @@ void set_index(Field_S* s, AppCtx* ptr_u)
 			ind->xiy.C2c_dirichlet[i] =(short int) temp2;
 		}
 	}
+
+	printf("[%s] ended\n", __func__);
 	PetscFree(pordering_x);  PetscFree(aordering_x); PetscFree(pordering_y); PetscFree(aordering_y);
 	AODestroy(&ao_x);
 	AODestroy(&ao_y);

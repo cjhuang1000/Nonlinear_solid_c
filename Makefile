@@ -10,9 +10,14 @@ PETSC_ARCH=arch-linux2-c-debug
 include ${PETSC_DIR}/lib/petsc/conf/variables
 include ${PETSC_DIR}/lib/petsc/conf/rules
 
-all: 	main.o nrutil.o boun_func.o init_cond.o init_setting.o matrices_update.o user_param.o interface_marker.o fluid.o chkopts
-	mpicc -o NonlinSolid main.o nrutil.o boun_func.o init_cond.o init_setting.o matrices_update.o user_param.o interface_marker.o fluid.o  ${PETSC_LIB}
-	${RM} main.o nrutil.o boun_func.o init_cond.o init_setting.o matrices_update.o user_param.o interface_marker.o fluid.o 
+OBJS = main.o nrutil.o boun_func.o init_cond.o init_setting.o matrices_update.o \
+user_param.o interface_marker.o fluid.o interface.o solidsolver.o
+
+EXE = NonlinSolid
+
+all: 	$(OBJS)  chkopts
+	mpicc -o $(EXE) $(OBJS) ${PETSC_LIB}
+	${RM} $(OBJS)
 
 
 

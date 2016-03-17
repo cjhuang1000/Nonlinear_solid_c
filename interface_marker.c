@@ -68,7 +68,7 @@ void marker_setup (Lag_marker* ptr_mk, Field_S* s, AppCtx* ptr_u)
 	int     	bound_sign[4],side,side_next,ncorner1 =4,ncorner2;
 	double  	corners[4][8];
 	double  	new_corner[2];
-	int 		i,j,cell,subcell,ii,jj,cell_i;
+	int 		i,j,k,cell,subcell,ii,jj,cell_i;
 
 	PetscScalar *sx_array,*sy_array,*ex_array,*ey_array,*tx_array,*ty_array,*l0;
 
@@ -82,15 +82,9 @@ void marker_setup (Lag_marker* ptr_mk, Field_S* s, AppCtx* ptr_u)
 		jj = (int) floor((double)cell/s->Nx);
 
 		// set the sdf of the doubly refined grid
-		sdf[0] = s->param.boundary_value[ii][jj];
-		sdf[2] = s->param.boundary_value[ii+1][jj];
-		sdf[6] = s->param.boundary_value[ii][jj+1];
-		sdf[8] = s->param.boundary_value[ii+1][jj+1];
-		sdf[1] = (sdf[0]+sdf[2])/2;
-		sdf[3] = (sdf[0]+sdf[6])/2;
-		sdf[5] = (sdf[2]+sdf[8])/2;
-		sdf[7] = (sdf[6]+sdf[8])/2;
-		sdf[4] = (sdf[0]+sdf[2]+sdf[6]+sdf[8])/4;
+        for(j=0; j<3; j++)
+     	   for(k=0; k<3; k++)
+     		   sdf[k*3+j] = s->param.boundary_value[ii*2+j][jj*2+k];
 
 		// normal vector (non-normalized) calculated by the SDF
 		n[0]=sdf[5]-sdf[3]; n[1]=sdf[7]-sdf[1];

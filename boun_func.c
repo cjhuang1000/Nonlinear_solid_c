@@ -87,8 +87,8 @@ double boundFunct_NS_gamma(int l, double x, double y, double gamma);
 
 struct boundfunc_edge   compute_matricesEdge   (double start_coord[2], double end_coord[2]);
 struct boundfunc_edgeNS compute_matricesEdgeNS (double start_coord[2], double end_coord[2]);
-int              type_determination     (double x[4]);
-boundfunc_cell   compute_matricesCell_bound(int cell_i, double sdf_value[4], char bd_type, int* ptr_bd);
+int              type_determination     (double x[9]);
+boundfunc_cell   compute_matricesCell_bound(int cell_i, double sdf_value[9], char bd_type, int* ptr_bd);
 boundfunc_cell   compute_matricesSubcell(double bound_value[4], char bd_type, int* ptr_type);
 
 void reduce_vector(short int** a, int n_b, int n_a);
@@ -99,6 +99,7 @@ void set_boundfunc(double ddx){
 
     int     i,j,subcell_k;
 
+    printf("[%s] started\n", __func__);
     dx = ddx;
     dx2 = ddx*ddx;
 
@@ -186,7 +187,7 @@ void set_boundfunc(double ddx){
         }
 
         }
-
+    printf("[%s] ended\n", __func__);
 }
 
 
@@ -200,7 +201,7 @@ void compute_matricesNonlinearStructure(Field_S* s){
     char* 			fnd = s->con.fsineumanndirichlet;
 
     double          m2pl = 2*ptr_s->mu + ptr_s->lambda; // mu*2 plus lambda
-    double          sdf[4]; // signed distance function
+    double          sdf9[9]; // signed distance function
     
     int             nx   = s->Nx;
     int             i,j,k, ii, jj;
@@ -213,6 +214,9 @@ void compute_matricesNonlinearStructure(Field_S* s){
     Mat             MS_full, KLS_full, NS_full, DS_full;
     PetscScalar     temp1[36],temp2[36],temp3[36],temp4[36],temp5[36],temp6[36]; // temporary arrays for MAT construction 
     PetscScalar     temp7[12],temp8[12];
+
+
+    printf("[%s] started\n", __func__);
 
     /*initialize the matrices MS, KLS, NS, DS */
 
@@ -291,12 +295,11 @@ void compute_matricesNonlinearStructure(Field_S* s){
         ii = cell_i%nx;
         jj = (int) floor((double)cell_i/nx);
 
-        sdf[0] = ptr_s->boundary_value[ii][jj];
-        sdf[1] = ptr_s->boundary_value[ii+1][jj];
-        sdf[2] = ptr_s->boundary_value[ii][jj+1];
-        sdf[3] = ptr_s->boundary_value[ii+1][jj+1];
+        for(j=0; j<3; j++)
+     	   for(k=0; k<3; k++)
+     		   sdf9[k*3+j] = ptr_s->boundary_value[ii*2+j][jj*2+k];
 
-        nsubcell+= type_determination(sdf);
+        nsubcell+= type_determination(sdf9);
     }
 
     shapefunc.cutcell=(boundfunc_cutcell*) malloc(nsubcell*sizeof(boundfunc_cutcell));
@@ -310,7 +313,7 @@ void compute_matricesNonlinearStructure(Field_S* s){
 
     // =========  for boundary cells ===========
     for(i=0;i<ptr_i->cell_N_boundary; i++)
-    	//for(i=0;i<1; i++)
+    //	for(i=0;i<1; i++)
     {
        cell_i = (int) ptr_i->cell_boundary[i];
 
@@ -324,15 +327,13 @@ void compute_matricesNonlinearStructure(Field_S* s){
             index_xiy[j] = ptr_i->xiy.G2g[index_cell.xiy[j]]; // y component if after x component
        }
 
-       sdf[0] = ptr_s->boundary_value[ii][jj];
-       sdf[1] = ptr_s->boundary_value[ii+1][jj];
-       sdf[2] = ptr_s->boundary_value[ii][jj+1];
-       sdf[3] = ptr_s->boundary_value[ii+1][jj+1];
+       for(j=0; j<3; j++)
+    	   for(k=0; k<3; k++)
+    		   sdf9[k*3+j] = ptr_s->boundary_value[ii*2+j][jj*2+k];
 
+       Mcell = compute_matricesCell_bound(cell_i, sdf9 , fnd[cell_i] ,&bdcell);
 
-       Mcell = compute_matricesCell_bound(cell_i, sdf , fnd[cell_i] ,&bdcell);
-
-       for(j=0;j<6;j++)
+       for(j=0;j<6;j++){
         for(k=0;k<6;k++)
         {
             temp1[j*6+k] = Mcell.MS_xx[j][k];
@@ -348,6 +349,7 @@ void compute_matricesNonlinearStructure(Field_S* s){
                            + ptr_s->mu*Mcell.KS_hyxhyx[j][k];
 
         }
+       }
 
         MatSetValues(MS_full ,6,index_xix,6,index_xix,temp1,ADD_VALUES);
         MatSetValues(MS_full ,6,index_xiy,6,index_xiy,temp2,ADD_VALUES);
@@ -394,6 +396,7 @@ void compute_matricesNonlinearStructure(Field_S* s){
         }
     }
 
+    printf("[%s] ended\n", __func__);
     //Matrices assembly
     MatAssemblyBegin(MS_full,MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(MS_full,MAT_FINAL_ASSEMBLY);
@@ -422,18 +425,11 @@ void compute_matricesNonlinearStructure(Field_S* s){
 }
 
 // input the sdf of four corners and return how many subcells is intersecting with boundaries
-int type_determination(double x[4])
+int type_determination(double sdf[9])
 {
     int         number=0,i;
-    double      sdf[9] = {x[0],0,x[1],0,0,0,x[2],0,x[3]};
     int         y[4][4] = {{0,1,3,4},{1,2,4,5},{3,4,6,7},{4,5,7,8}},ssdf[9];
     _Bool       isext,isint;
-
-    sdf[1] = (sdf[0]+sdf[2])/2;
-    sdf[3] = (sdf[0]+sdf[6])/2;
-    sdf[5] = (sdf[2]+sdf[8])/2;
-    sdf[7] = (sdf[6]+sdf[8])/2;
-    sdf[4] = (sdf[0]+sdf[2]+sdf[6]+sdf[8])/4;
 
     for(i=0;i<9;i++)
         ssdf[i] = (int) SIGN(1,sdf[i]);
@@ -448,22 +444,15 @@ int type_determination(double x[4])
     return number;
 }
 
-boundfunc_cell compute_matricesCell_bound(int cell_i, double sdf_value[4], char bd_type, int* ptr_bd)
+boundfunc_cell compute_matricesCell_bound(int cell_i, double sdf[9], char bd_type, int* ptr_bd)
 {
     // ptr_bd: the number of cut-subcell
     boundfunc_cell  Mcell={0};
     int             subcell_k,i,j;
     int             sym[4][4] = {{0,1,4,3},{2,1,4,5},{6,7,4,3},{8,7,4,5}};
-    double          sdf[9] = {sdf_value[0],0,sdf_value[1],0,0,0,sdf_value[2],0,sdf_value[3]};
     double          bound_value[4];
     boundfunc_cell  subcell;
     int             type,n;
-
-    sdf[1] = (sdf[0]+sdf[2])/2;
-    sdf[3] = (sdf[0]+sdf[6])/2;
-    sdf[5] = (sdf[2]+sdf[8])/2;
-    sdf[7] = (sdf[6]+sdf[8])/2;
-    sdf[4] = (sdf[0]+sdf[2]+sdf[6]+sdf[8])/4;
 
     for(subcell_k=0;subcell_k<4; subcell_k++ )
     {
@@ -495,8 +484,8 @@ boundfunc_cell compute_matricesCell_bound(int cell_i, double sdf_value[4], char 
                                         *boundfunc.sym[subcell_k].signx*boundfunc.sym[subcell_k].signy;
                 Mcell.KS_hxxhyx[i][j] +=subcell.KS_hxxhyx[boundfunc.sym[subcell_k].x[i]][boundfunc.sym[subcell_k].y[j]];
                 Mcell.KS_hxyhyy[i][j] +=subcell.KS_hxyhyy[boundfunc.sym[subcell_k].x[i]][boundfunc.sym[subcell_k].y[j]];
-            }
 
+        }
         if(bd_type == 'N')
         {
             for(i=0; i<6; i++)
@@ -579,8 +568,9 @@ boundfunc_cell compute_matricesSubcell(double bound_value[4], char bd_type, int*
     struct boundfunc_edgeNS    edgeNS;
     boundfunc_cell             subcell={0};
 
-    for(i=0;i<4;i++)
+    for(i=0;i<4;i++){
         bound_sign[i]=SIGN(1,bound_value[i]);
+    }
 
     /*not a single corner in*/
     if( (bound_sign[0]!= -1) && (bound_sign[1]!= -1) && (bound_sign[2]!= -1) && (bound_sign[3]!= -1) )
@@ -641,7 +631,8 @@ boundfunc_cell compute_matricesSubcell(double bound_value[4], char bd_type, int*
     // Add the contribution of each edge into the line integral
     for(side=0; side<ncorner2;side++)
     {
-        side_next = (side+1)%ncorner2;
+        //printf("%f %f %f %f\n",corners[0][side],corners[1][side],corners[2][side],corners[3][side]);
+    	side_next = (side+1)%ncorner2;
         start_coord[0] = corners[0][side];
         start_coord[1] = corners[1][side];
         end_coord[0]   = corners[0][side_next];

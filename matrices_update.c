@@ -99,6 +99,8 @@ void compute_matricesNonlinearStructure_update(Field_S* s){
     Index_S				*ptr_i = &(s->ind);
     Param_S				*ptr_s = &(s->param);
 
+    printf("[%s] started\n", __func__);
+
     m2pl = 2*ptr_s->mu + ptr_s->lambda;
     mpl = ptr_s->mu + ptr_s->lambda;
     lambda = ptr_s->lambda;
@@ -211,6 +213,7 @@ void compute_matricesNonlinearStructure_update(Field_S* s){
     // =========  for boundary cells =========== @@
 
     for(i=0;i<ptr_i->cell_N_boundary; i++)
+    //	for(i=0;i<1; i++)
     {
        cell_i = (int) ptr_i->cell_boundary[i];
 
@@ -220,7 +223,7 @@ void compute_matricesNonlinearStructure_update(Field_S* s){
        {
             index_xix[j] = ptr_i->xix.G2g_before[index_cell.xix[j]];
             index_xiy[j] = ptr_i->xiy.G2g_before[index_cell.xiy[j]];
-        }for(i=0;i<ptr_i->cell_N_boundary; i++)
+        }
 
        for(j=0;j<4;j++)
        {
@@ -237,12 +240,13 @@ void compute_matricesNonlinearStructure_update(Field_S* s){
        grad_xi.yx[2] = Dx.vertex_yx[index_cell.i]  [index_cell.j+1];
        grad_xi.yx[3] = Dx.vertex_yx[index_cell.i+1][index_cell.j+1];
 
+
        //calculate the strain in each subcell
        for(j=0;j<4;j++)
        {
             strain.xx[j] = grad_xi.xx[j]+(grad_xi.xx[j]*grad_xi.xx[j] + grad_xi.yx[j]*grad_xi.yx[j])/2.0;
             strain.yy[j] = grad_xi.yy[j]+(grad_xi.xy[j]*grad_xi.xy[j] + grad_xi.yy[j]*grad_xi.yy[j])/2.0;
-            strain.xy[j] = (grad_xi.xy[j] +grad_xi.yx[j] )/2+(grad_xi.xx[j]*grad_xi.xy[j] + grad_xi.yx[j]*grad_xi.yy[j])/2.0;
+            strain.xy[j] = (grad_xi.xy[j] +grad_xi.yx[j] )/2.0+(grad_xi.xx[j]*grad_xi.xy[j] + grad_xi.yx[j]*grad_xi.yy[j])/2.0;
        }
 
        for(j=0;j<4;j++)
@@ -253,7 +257,7 @@ void compute_matricesNonlinearStructure_update(Field_S* s){
        }
        mcell = compute_matricesCell_bound_update(cell_i,stress,grad_xi);
 
-       for(j=0;j<6;j++)
+       for(j=0;j<6;j++){
         for(k=0;k<6;k++)
         {
         	temp1[j*6+k] = mcell.KnlS_xx[j][k];
@@ -264,6 +268,7 @@ void compute_matricesNonlinearStructure_update(Field_S* s){
         	temp5[j*6+k] = mcell.KlS_xy[k][j];
         	temp6[j*6+k] = mcell.KlS_yy[j][k];
         }
+       }
 
        MatSetValues(KNS_full,6,index_xix,6,index_xix,temp1,ADD_VALUES);
        MatSetValues(KNS_full,6,index_xiy,6,index_xiy,temp2,ADD_VALUES);
@@ -277,11 +282,8 @@ void compute_matricesNonlinearStructure_update(Field_S* s){
     	   temp7[j] = mcell.FS_x[j];
     	   temp8[j] = mcell.FS_y[j];
        }
-
        VecSetValues(FS_full,6,index_xix,temp7,ADD_VALUES);
        VecSetValues(FS_full,6,index_xiy,temp8,ADD_VALUES);
-
-
     }
 
     MatAssemblyBegin(KNS_full,MAT_FINAL_ASSEMBLY);
@@ -291,6 +293,7 @@ void compute_matricesNonlinearStructure_update(Field_S* s){
     VecAssemblyBegin(FS_full);
     VecAssemblyEnd(FS_full);
 
+    printf("[%s] ended\n", __func__);
     //Set the reduced governing matrices
     //ISView(ptr_i->is_xi,PETSC_VIEWER_STDOUT_SELF);
     //printf("%i %i\n",ptr_i->xix_N,ptr_i->xiy_N);
@@ -331,18 +334,18 @@ void compute_grad_update(struct Grad_Dist *ptr_dx, Field_S* s)
 	VecCreateSeq(PETSC_COMM_SELF,ptr_i->xix_N +ptr_i->xix_ghoN,&xix_local);
     VecCreateSeq(PETSC_COMM_SELF,ptr_i->xiy_N +ptr_i->xiy_ghoN,&xiy_local);
 
-    VecScatterBegin	(s->scatter_x,s->xi_old,xix_local,INSERT_VALUES,SCATTER_FORWARD);
-    VecScatterEnd	(s->scatter_x,s->xi_old,xix_local,INSERT_VALUES,SCATTER_FORWARD);
+    VecScatterBegin	(s->scatter_x,s->xi_k,xix_local,INSERT_VALUES,SCATTER_FORWARD);
+    VecScatterEnd	(s->scatter_x,s->xi_k,xix_local,INSERT_VALUES,SCATTER_FORWARD);
 
-    VecScatterBegin	(s->scatter_y,s->xi_old,xiy_local,INSERT_VALUES,SCATTER_FORWARD);
-    VecScatterEnd	(s->scatter_y,s->xi_old,xiy_local,INSERT_VALUES,SCATTER_FORWARD);
+    VecScatterBegin	(s->scatter_y,s->xi_k,xiy_local,INSERT_VALUES,SCATTER_FORWARD);
+    VecScatterEnd	(s->scatter_y,s->xi_k,xiy_local,INSERT_VALUES,SCATTER_FORWARD);
 
     VecGetArray(xix_local,&xix);
     VecGetArray(xiy_local,&xiy);
 
     for(i=0;i<nn;i++)
     {
-        xigrid_x[i] =0.0;
+    	xigrid_x[i] =0.0;
         xigrid_y[i] =0.0;
     }
 
@@ -395,10 +398,10 @@ struct Mcell0 compute_matricesCell_interior(struct SSG_subgrid stress, struct SS
                             +  (grad_xi.yx[k]*(1+grad_xi.yy[k])*mpl                    )*
                             (boudfunc_subcellint[k].KS_hyyhyx[i][j]+boudfunc_subcellint[k].KS_hyyhyx[j][i] ) ;
 
-        mcell0.KlS_xy[i][j] += ( (1+grad_xi.xx[k])*grad_xi.yx[k]*m2pl       +(1+grad_xi.yy[k])*grad_xi.xy[k]*mu            )*boudfunc_subcellint[k].KS_hxxhyx[i][j]
-                            +  ( (1+grad_xi.yy[k])*(1+grad_xi.xx[k])*lambda + grad_xi.xy[k]*grad_xi.yx[k]*mu               )*boudfunc_subcellint[k].KS_hxxhyy[i][j]
-                            +  ( (1+grad_xi.yy[k])*(1+grad_xi.xx[k])*mu     + grad_xi.xy[k]*grad_xi.yx[k]*lambda           )*boudfunc_subcellint[k].KS_hxyhyx[i][j]
-                            +  ( (1+grad_xi.yy[k])*grad_xi.xy[k]*m2pl       +(1+grad_xi.xx[k])*grad_xi.yx[k]*mu            )*boudfunc_subcellint[k].KS_hxyhyy[i][j]  ;
+        mcell0.KlS_xy[i][j] += ( (1.0+grad_xi.xx[k])*grad_xi.yx[k]*m2pl       +(1.0+grad_xi.yy[k])*grad_xi.xy[k]*mu            )*boudfunc_subcellint[k].KS_hxxhyx[i][j]
+                            +  ( (1.0+grad_xi.yy[k])*(1+grad_xi.xx[k])*lambda + grad_xi.xy[k]*grad_xi.yx[k]*mu               )*boudfunc_subcellint[k].KS_hxxhyy[i][j]
+                            +  ( (1.0+grad_xi.yy[k])*(1+grad_xi.xx[k])*mu     + grad_xi.xy[k]*grad_xi.yx[k]*lambda           )*boudfunc_subcellint[k].KS_hxyhyx[i][j]
+                            +  ( (1.0+grad_xi.yy[k])*grad_xi.xy[k]*m2pl       +(1.0+grad_xi.xx[k])*grad_xi.yx[k]*mu            )*boudfunc_subcellint[k].KS_hxyhyy[i][j]  ;
 
         mcell0.KnlS_xx[i][j]+= stress.xx[k]*boudfunc_subcellint[k].KS_hxxhxx[i][j]
                             +  stress.yy[k]*boudfunc_subcellint[k].KS_hxyhxy[i][j]
@@ -413,11 +416,11 @@ struct Mcell0 compute_matricesCell_interior(struct SSG_subgrid stress, struct SS
     for(k=0; k<4; k++)
         for(i=0; i<6; i++)
     {
-        mcell0.FS_x[i] += ((1+grad_xi.xx[k])*stress.xx[k] + stress.xy[k]*grad_xi.xy[k])*boudfunc_subcellint[k].FS_hxx[i]
-                       +  ((1+grad_xi.xx[k])*stress.xy[k] + stress.yy[k]*grad_xi.xy[k])*boudfunc_subcellint[k].FS_hxy[i];
+        mcell0.FS_x[i] += ((1.0+grad_xi.xx[k])*stress.xx[k] + stress.xy[k]*grad_xi.xy[k])*boudfunc_subcellint[k].FS_hxx[i]
+                       +  ((1.0+grad_xi.xx[k])*stress.xy[k] + stress.yy[k]*grad_xi.xy[k])*boudfunc_subcellint[k].FS_hxy[i];
 
-        mcell0.FS_y[i] += ((1+grad_xi.yy[k])*stress.xy[k] + stress.xx[k]*grad_xi.yx[k])*boudfunc_subcellint[k].FS_hyx[i]
-                       +  ((1+grad_xi.yy[k])*stress.yy[k] + stress.xy[k]*grad_xi.yx[k])*boudfunc_subcellint[k].FS_hyy[i];
+        mcell0.FS_y[i] += ((1.0+grad_xi.yy[k])*stress.xy[k] + stress.xx[k]*grad_xi.yx[k])*boudfunc_subcellint[k].FS_hyx[i]
+                       +  ((1.0+grad_xi.yy[k])*stress.yy[k] + stress.xy[k]*grad_xi.yx[k])*boudfunc_subcellint[k].FS_hyy[i];
     }
 
 
@@ -449,10 +452,10 @@ struct Mcell0 compute_matricesCell_bound_update(int cell_i,struct SSG_subgrid st
                                     +  (grad_xi.yx[k]*(1+grad_xi.yy[k])*mpl                    )*
                                     (boudfunc_subcellint[k].KS_hyyhyx[i][j]+boudfunc_subcellint[k].KS_hyyhyx[j][i]) ;
 
-                mcell0.KlS_xy[i][j] += ( (1+grad_xi.xx[k])*grad_xi.yx[k]*m2pl       +(1+grad_xi.yy[k])*grad_xi.xy[k]*mu            )*boudfunc_subcellint[k].KS_hxxhyx[i][j]
-                                    +  ( (1+grad_xi.yy[k])*(1+grad_xi.xx[k])*lambda + grad_xi.xy[k]*grad_xi.yx[k]*mu               )*boudfunc_subcellint[k].KS_hxxhyy[i][j]
-                                    +  ( (1+grad_xi.yy[k])*(1+grad_xi.xx[k])*mu     + grad_xi.xy[k]*grad_xi.yx[k]*lambda           )*boudfunc_subcellint[k].KS_hxyhyx[i][j]
-                                    +  ( (1+grad_xi.yy[k])*grad_xi.xy[k]*m2pl       +(1+grad_xi.xx[k])*grad_xi.yx[k]*mu            )*boudfunc_subcellint[k].KS_hxyhyy[i][j]  ;
+                mcell0.KlS_xy[i][j] += ( (1.0+grad_xi.xx[k])*grad_xi.yx[k]*m2pl       +(1.0+grad_xi.yy[k])*grad_xi.xy[k]*mu            )*boudfunc_subcellint[k].KS_hxxhyx[i][j]
+                                    +  ( (1.0+grad_xi.yy[k])*(1+grad_xi.xx[k])*lambda + grad_xi.xy[k]*grad_xi.yx[k]*mu               )*boudfunc_subcellint[k].KS_hxxhyy[i][j]
+                                    +  ( (1.0+grad_xi.yy[k])*(1+grad_xi.xx[k])*mu     + grad_xi.xy[k]*grad_xi.yx[k]*lambda           )*boudfunc_subcellint[k].KS_hxyhyx[i][j]
+                                    +  ( (1.0+grad_xi.yy[k])*grad_xi.xy[k]*m2pl       +(1.0+grad_xi.xx[k])*grad_xi.yx[k]*mu            )*boudfunc_subcellint[k].KS_hxyhyy[i][j]  ;
 
                 mcell0.KnlS_xx[i][j]+= stress.xx[k]*boudfunc_subcellint[k].KS_hxxhxx[i][j]
                                     +  stress.yy[k]*boudfunc_subcellint[k].KS_hxyhxy[i][j]
@@ -466,33 +469,34 @@ struct Mcell0 compute_matricesCell_bound_update(int cell_i,struct SSG_subgrid st
 
             for(i=0; i<6; i++)
             {
-                mcell0.FS_x[i] += ((1+grad_xi.xx[k])*stress.xx[k] + stress.xy[k]*grad_xi.xy[k])*boudfunc_subcellint[k].FS_hxx[i]
-                               +  ((1+grad_xi.xx[k])*stress.xy[k] + stress.yy[k]*grad_xi.xy[k])*boudfunc_subcellint[k].FS_hxy[i];
+                mcell0.FS_x[i] += ((1.0+grad_xi.xx[k])*stress.xx[k] + stress.xy[k]*grad_xi.xy[k])*boudfunc_subcellint[k].FS_hxx[i]
+                               +  ((1.0+grad_xi.xx[k])*stress.xy[k] + stress.yy[k]*grad_xi.xy[k])*boudfunc_subcellint[k].FS_hxy[i];
 
-                mcell0.FS_y[i] += ((1+grad_xi.yy[k])*stress.xy[k] + stress.xx[k]*grad_xi.yx[k])*boudfunc_subcellint[k].FS_hyx[i]
-                               +  ((1+grad_xi.yy[k])*stress.yy[k] + stress.xy[k]*grad_xi.yx[k])*boudfunc_subcellint[k].FS_hyy[i];
+                mcell0.FS_y[i] += ((1.0+grad_xi.yy[k])*stress.xy[k] + stress.xx[k]*grad_xi.yx[k])*boudfunc_subcellint[k].FS_hyx[i]
+                               +  ((1.0+grad_xi.yy[k])*stress.yy[k] + stress.xy[k]*grad_xi.yx[k])*boudfunc_subcellint[k].FS_hyy[i];
             }
         }
         else if(shapefunc.info[cell_i][k] > -1)
         {
             n = shapefunc.info[cell_i][k];
+
             for(i=0; i<6; i++)
                 for(j=0; j<6; j++)
             {
-                mcell0.KlS_xx[i][j] += (DSQR(1+grad_xi.xx[k])*m2pl  +DSQR(grad_xi.xy[k])*mu     )*shapefunc.cutcell[n].KS_hxxhxx[i][j]
-                                    +  (DSQR(1+grad_xi.xx[k])*mu    +DSQR(grad_xi.xy[k])*m2pl   )*shapefunc.cutcell[n].KS_hxyhxy[i][j]
+                mcell0.KlS_xx[i][j] += (DSQR(1.0+grad_xi.xx[k])*m2pl  +DSQR(grad_xi.xy[k])*mu     )*shapefunc.cutcell[n].KS_hxxhxx[i][j]
+                                    +  (DSQR(1.0+grad_xi.xx[k])*mu    +DSQR(grad_xi.xy[k])*m2pl   )*shapefunc.cutcell[n].KS_hxyhxy[i][j]
                                     +  (grad_xi.xy[k]*(1+grad_xi.xx[k])*mpl                    )*
                                     (shapefunc.cutcell[n].KS_hxxhxy[i][j]+shapefunc.cutcell[n].KS_hxxhxy[j][i]) ;
 
-                mcell0.KlS_yy[i][j] += (DSQR(1+grad_xi.yy[k])*m2pl  +DSQR(grad_xi.yx[k])*mu     )*shapefunc.cutcell[n].KS_hyyhyy[i][j]
-                                    +  (DSQR(1+grad_xi.yy[k])*mu    +DSQR(grad_xi.yx[k])*m2pl   )*shapefunc.cutcell[n].KS_hyxhyx[i][j]
+                mcell0.KlS_yy[i][j] += (DSQR(1.0+grad_xi.yy[k])*m2pl  +DSQR(grad_xi.yx[k])*mu     )*shapefunc.cutcell[n].KS_hyyhyy[i][j]
+                                    +  (DSQR(1.0+grad_xi.yy[k])*mu    +DSQR(grad_xi.yx[k])*m2pl   )*shapefunc.cutcell[n].KS_hyxhyx[i][j]
                                     +  (grad_xi.yx[k]*(1+grad_xi.yy[k])*mpl                    )*
                                     (shapefunc.cutcell[n].KS_hyyhyx[i][j]+shapefunc.cutcell[n].KS_hyyhyx[j][i]) ;
 
-                mcell0.KlS_xy[i][j] += ( (1+grad_xi.xx[k])*grad_xi.yx[k]*m2pl       +(1+grad_xi.yy[k])*grad_xi.xy[k]*mu            )*shapefunc.cutcell[n].KS_hxxhyx[i][j]
-                                    +  ( (1+grad_xi.yy[k])*(1+grad_xi.xx[k])*lambda + grad_xi.xy[k]*grad_xi.yx[k]*mu               )*shapefunc.cutcell[n].KS_hxxhyy[i][j]
-                                    +  ( (1+grad_xi.yy[k])*(1+grad_xi.xx[k])*mu     + grad_xi.xy[k]*grad_xi.yx[k]*lambda           )*shapefunc.cutcell[n].KS_hxyhyx[i][j]
-                                    +  ( (1+grad_xi.yy[k])*grad_xi.xy[k]*m2pl       +(1+grad_xi.xx[k])*grad_xi.yx[k]*mu            )*shapefunc.cutcell[n].KS_hxyhyy[i][j]  ;
+                mcell0.KlS_xy[i][j] += ( (1.0+grad_xi.xx[k])*grad_xi.yx[k]*m2pl       +(1.0+grad_xi.yy[k])*grad_xi.xy[k]*mu            )*shapefunc.cutcell[n].KS_hxxhyx[i][j]
+                                    +  ( (1.0+grad_xi.yy[k])*(1+grad_xi.xx[k])*lambda + grad_xi.xy[k]*grad_xi.yx[k]*mu               )*shapefunc.cutcell[n].KS_hxxhyy[i][j]
+                                    +  ( (1.0+grad_xi.yy[k])*(1+grad_xi.xx[k])*mu     + grad_xi.xy[k]*grad_xi.yx[k]*lambda           )*shapefunc.cutcell[n].KS_hxyhyx[i][j]
+                                    +  ( (1.0+grad_xi.yy[k])*grad_xi.xy[k]*m2pl       +(1.0+grad_xi.xx[k])*grad_xi.yx[k]*mu            )*shapefunc.cutcell[n].KS_hxyhyy[i][j]  ;
 
                 mcell0.KnlS_xx[i][j]+= stress.xx[k]*shapefunc.cutcell[n].KS_hxxhxx[i][j]
                                     +  stress.yy[k]*shapefunc.cutcell[n].KS_hxyhxy[i][j]
@@ -508,15 +512,13 @@ struct Mcell0 compute_matricesCell_bound_update(int cell_i,struct SSG_subgrid st
 
             for(i=0; i<6; i++)
             {
-                mcell0.FS_x[i] += ((1+grad_xi.xx[k])*stress.xx[k] + stress.xy[k]*grad_xi.xy[k])*shapefunc.cutcell[n].FS_hxx[i]
-                               +  ((1+grad_xi.xx[k])*stress.xy[k] + stress.yy[k]*grad_xi.xy[k])*shapefunc.cutcell[n].FS_hxy[i];
+                mcell0.FS_x[i] += ((1.0+grad_xi.xx[k])*stress.xx[k] + stress.xy[k]*grad_xi.xy[k])*shapefunc.cutcell[n].FS_hxx[i]
+                               +  ((1.0+grad_xi.xx[k])*stress.xy[k] + stress.yy[k]*grad_xi.xy[k])*shapefunc.cutcell[n].FS_hxy[i];
 
-                mcell0.FS_y[i] += ((1+grad_xi.yy[k])*stress.xy[k] + stress.xx[k]*grad_xi.yx[k])*shapefunc.cutcell[n].FS_hyx[i]
-                               +  ((1+grad_xi.yy[k])*stress.yy[k] + stress.xy[k]*grad_xi.yx[k])*shapefunc.cutcell[n].FS_hyy[i];
+                mcell0.FS_y[i] += ((1.0+grad_xi.yy[k])*stress.xy[k] + stress.xx[k]*grad_xi.yx[k])*shapefunc.cutcell[n].FS_hyx[i]
+                               +  ((1.0+grad_xi.yy[k])*stress.yy[k] + stress.xy[k]*grad_xi.yx[k])*shapefunc.cutcell[n].FS_hyy[i];
             }
         }
-        else
-            continue;
 
     }
 

@@ -30,5 +30,7 @@ void SolidInitialize(Field_S* s, AppCtx* ptr_u);
 void SolidSolver(Field_S* s);
 void SolidOutput(Field_S* s);
 void SolidFinalize(Field_S* s);
+void field_output (Field_S* s);
+void restart_file_output (Field_S* s);
 
 #endif /* SOLIDSOLVER_H_ */

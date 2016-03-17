@@ -126,9 +126,6 @@ void fluid_setup(Field_F* f, Field_S* s)
 
 	DMDAGetGhostCorners(f->da,&i0,&j0,&k0,&m1, &m2, &m3);
 
-	//printf("corners rank, x,y limits %f %f %f %f\n",ptr_u->rank,ptr_f->idx_range.p_raw_ghost[0][0],ptr_f->idx_range.p_raw_ghost[0][1]
-	 //,ptr_f->idx_range.p_raw_ghost[1][0],ptr_f->idx_range.p_raw_ghost[1][1]);
-
 	// raw ghosted ranges
 	idl[start] = i0; idl[end] = i0+m1-1;
 	jdl[start] = j0; jdl[end] = j0+m2-1;
@@ -253,12 +250,13 @@ void fluid_setup(Field_F* f, Field_S* s)
 	DMDAVecGetArray(f->da,	f->dist_v,	&dist_v);
 	DMDAVecGetArray(f->da,	f->dist_p,	&dist_p);
 
+	// @@
 	set_sdf	(s, f->idx_range.u_raw[1][0], f->idx_range.u_raw[1][1]+1, f->idx_range.u_raw[0][0],
-	       	  f->idx_range.u_raw[0][1]+1, f->ym_grid, f->x_grid, dist_u);
+	       	  f->idx_range.u_raw[0][1]+1, f->ym_grid, f->x_grid, dist_u, 'f');
 	set_sdf	(s, f->idx_range.v_raw[1][0], f->idx_range.v_raw[1][1]+1, f->idx_range.v_raw[0][0],
-	       	  f->idx_range.v_raw[0][1]+1, f->y_grid, f->xm_grid, dist_v);
+	       	  f->idx_range.v_raw[0][1]+1, f->y_grid, f->xm_grid, dist_v,'f');
 	set_sdf	(s, f->idx_range.p_raw[1][0], f->idx_range.p_raw[1][1]+1, f->idx_range.p_raw[0][0],
-	       	  f->idx_range.p_raw[0][1]+1, f->ym_grid, f->xm_grid, dist_p);
+	       	  f->idx_range.p_raw[0][1]+1, f->ym_grid, f->xm_grid, dist_p,'f');
 
 	DMDAVecRestoreArray(f->da,	f->dist_u,	&dist_u);
 	DMDAVecRestoreArray(f->da,	f->dist_v,	&dist_v);

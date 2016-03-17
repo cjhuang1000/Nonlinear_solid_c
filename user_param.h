@@ -8,6 +8,6 @@
 #include <petscsys.h>
 
 void user_param (Field_S* s, AppCtx* ptr_u);
-void set_sdf	(Field_S* s, int mi, int mf, int ni, int nf, double* x, double* y, double** sdf);
+void set_sdf(Field_S* s, int mx, int nx, int my, int ny, double* x, double* y, double** sdf, char type);
 
 #endif  /* USER_PARAM_H */
